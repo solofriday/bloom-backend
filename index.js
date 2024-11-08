@@ -4,6 +4,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const mysql = require('mysql2/promise');
+const ExifReader = require('exif-reader');
 
 // Initialize express
 const app = express();
@@ -59,6 +60,24 @@ function getCorrectImageUrl(imageUrl) {
   );
 }
 
+// Add helper function to extract date from EXIF data
+async function getImageDate(buffer) {
+  try {
+    // Read EXIF data from buffer
+    const exif = ExifReader(buffer);
+    
+    if (exif && exif.exif && exif.exif.DateTimeOriginal) {
+      // EXIF dates are in format "YYYY:MM:DD HH:MM:SS"
+      const exifDate = exif.exif.DateTimeOriginal;
+      return new Date(exifDate.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'));
+    }
+  } catch (err) {
+    console.log('No EXIF data found or error reading EXIF:', err);
+  }
+  
+  return new Date(); // Default to current date if no EXIF data
+}
+
 // Test endpoint
 app.get('/', (req, res) => {
   res.json({ message: 'Server is running' });
@@ -90,12 +109,13 @@ app.get('/api/plants', async (req, res) => {
     const plantsWithStages = await Promise.all(plants.map(async (plant) => {
       const [stages] = await pool.execute(`
         SELECT 
+          id,
           status,
-          DATE_FORMAT(date, '%Y-%m-%d') as date,
+          DATE_FORMAT(date_taken, '%Y-%m-%d') as date,
           image_url as image
         FROM plant_stages 
         WHERE plant_id = ?
-        ORDER BY date
+        ORDER BY date_taken DESC, id DESC
       `, [plant.id]);
 
       // Fix image URLs in stages
@@ -184,10 +204,14 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
       console.log('Generated image URL:', imageUrl);
 
+      // Get date from EXIF data or use current date
+      const dateTaken = await getImageDate(req.file.buffer);
+      console.log('Image date taken:', dateTaken);
+
       console.log('Inserting stage into database');
       const [result] = await pool.execute(
-        'INSERT INTO plant_stages (plant_id, status, date, image_url) VALUES (?, ?, ?, ?)',
-        [plantId, status, new Date().toISOString().split('T')[0], imageUrl]
+        'INSERT INTO plant_stages (plant_id, status, date_taken, image_url) VALUES (?, ?, ?, ?)',
+        [plantId, status, dateTaken, imageUrl]
       );
       console.log('Database insert successful:', result);
 
@@ -199,14 +223,15 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
             (
               SELECT JSON_ARRAYAGG(
                 JSON_OBJECT(
+                  'id', ps.id,
                   'status', ps.status,
-                  'date', DATE_FORMAT(ps.date, '%Y-%m-%d'),
+                  'date', DATE_FORMAT(ps.date_taken, '%Y-%m-%d'),
                   'image', ps.image_url
                 )
+                ORDER BY ps.date_taken DESC, ps.id DESC
               )
               FROM plant_stages ps
               WHERE ps.plant_id = p.id
-              ORDER BY ps.date DESC
             ),
             '[]'
           ) as growthStages
