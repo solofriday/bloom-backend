@@ -71,47 +71,56 @@ async function getImageDate(buffer) {
 // Optimized plants endpoint with single query
 app.get('/api/plants', async (req, res) => {
   try {
-    const [results] = await pool.execute(`
-      SELECT 
-        p.id,
-        p.name,
-        p.location,
-        p.sensitivities,
-        COALESCE(
-          JSON_ARRAYAGG(
-            IF(ps.id IS NOT NULL,
-              JSON_OBJECT(
-                'id', ps.id,
-                'status', ps.status,
-                'date', DATE_FORMAT(COALESCE(ps.date_taken, STR_TO_DATE(ps.date, '%Y-%m-%d')), '%Y-%m-%d'),
-                'image', ps.image_url
-              ),
-              NULL
-            )
-          ),
-          JSON_ARRAY()
-        ) as stages
-      FROM plants p
-      LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-      GROUP BY p.id, p.name, p.location, p.sensitivities
-      ORDER BY p.id
+    // First, get all plants
+    const [plants] = await pool.execute(`
+      SELECT id, name, location, sensitivities
+      FROM plants
+      ORDER BY id
     `);
 
-    const plants = results.map(plant => ({
-      ...plant,
-      sensitivities: JSON.parse(plant.sensitivities || '[]'),
-      growthStages: JSON.parse(plant.stages || '[]')
-        .filter(Boolean) // Remove null values
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    // Then get stages for each plant
+    const plantsWithStages = await Promise.all(plants.map(async (plant) => {
+      const [stages] = await pool.execute(`
+        SELECT 
+          id,
+          status,
+          DATE_FORMAT(COALESCE(date_taken, STR_TO_DATE(date, '%Y-%m-%d')), '%Y-%m-%d') as date,
+          image_url as image
+        FROM plant_stages 
+        WHERE plant_id = ?
+        ORDER BY COALESCE(date_taken, STR_TO_DATE(date, '%Y-%m-%d')) DESC
+      `, [plant.id]);
+
+      return {
+        ...plant,
+        sensitivities: JSON.parse(plant.sensitivities || '[]'),
+        growthStages: stages || []
+      };
     }));
 
-    res.json(plants);
+    // Add debug logging
+    console.log('Sending plants data:', {
+      count: plantsWithStages.length,
+      firstPlant: plantsWithStages[0]
+    });
+
+    res.json(plantsWithStages);
   } catch (error) {
-    console.error('Error fetching plants:', error);
+    console.error('Database error:', {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql
+    });
+
     res.status(500).json({ 
       message: 'Error fetching plants', 
       error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      details: process.env.NODE_ENV === 'development' ? {
+        sqlMessage: error.sqlMessage,
+        sql: error.sql,
+        code: error.code
+      } : undefined
     });
   }
 });
