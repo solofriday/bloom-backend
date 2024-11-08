@@ -50,6 +50,15 @@ const upload = multer({
   },
 });
 
+// Add this helper function at the top of your file
+function getCorrectImageUrl(imageUrl) {
+  // Fix URLs that have duplicate bucket names
+  return imageUrl.replace(
+    /https:\/\/bloom-bucket\.bloom-bucket\./,
+    'https://bloom-bucket.'
+  );
+}
+
 // Test endpoint
 app.get('/', (req, res) => {
   res.json({ message: 'Server is running' });
@@ -89,10 +98,16 @@ app.get('/api/plants', async (req, res) => {
         ORDER BY date
       `, [plant.id]);
 
+      // Fix image URLs in stages
+      const fixedStages = stages.map(stage => ({
+        ...stage,
+        image: getCorrectImageUrl(stage.image)
+      }));
+
       return {
         ...plant,
         sensitivities: plant.sensitivities ? JSON.parse(plant.sensitivities) : [],
-        growthStages: stages || []
+        growthStages: fixedStages || []
       };
     }));
 
@@ -138,7 +153,7 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
 
       await s3Client.send(command);
       
-      // Construct the correct URL format for DigitalOcean Spaces
+      // Construct the correct URL format
       const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
 
       // Insert the new stage into the database
@@ -147,7 +162,7 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
         [plantId, status, date, imageUrl]
       );
 
-      // Get the updated plant data
+      // Get the updated plant data with fixed URLs
       const [updatedPlant] = await pool.execute(`
         SELECT p.*, 
           (SELECT JSON_ARRAYAGG(
@@ -165,15 +180,21 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
         WHERE p.id = ?
       `, [plantId]);
 
+      // Fix URLs in the response
+      const plant = {
+        ...updatedPlant[0],
+        sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
+        growthStages: JSON.parse(updatedPlant[0].growthStages || '[]').map(stage => ({
+          ...stage,
+          image: getCorrectImageUrl(stage.image)
+        }))
+      };
+
       res.json({
         message: 'Stage added successfully',
         imageUrl,
         stageId: result.insertId,
-        plant: {
-          ...updatedPlant[0],
-          sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
-          growthStages: JSON.parse(updatedPlant[0].growthStages || '[]')
-        }
+        plant
       });
 
     } catch (uploadError) {
