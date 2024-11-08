@@ -113,12 +113,17 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
     console.log('Upload request received');
     
     if (!req.file) {
-      console.log('No file received');
       return res.status(400).json({ message: 'No image file provided' });
     }
 
-    // Generate unique filename with sanitized original name
-    const fileKey = `plants/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+    // Add validation for required fields
+    const { status, date, plantId } = req.body;
+    if (!status || !date || !plantId) {
+      return res.status(400).json({ message: 'Missing required fields' });
+    }
+
+    // Update fileKey to include plantId in path
+    const fileKey = `plants/${plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
     
     try {
       const command = new PutObjectCommand({
@@ -133,15 +138,23 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       await s3Client.send(command);
       console.log('Upload to Spaces complete');
 
-      // Construct the URL using the standard DigitalOcean Spaces format
-      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
+      // Update imageUrl construction to use environment variable
+      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${fileKey}`;
       console.log('Generated image URL:', imageUrl);
       
+      // Add database insert
+      const [result] = await pool.execute(
+        'INSERT INTO plant_stages (plant_id, status, date, image_url) VALUES (?, ?, ?, ?)',
+        [plantId, status, date, imageUrl]
+      );
+
       res.json({
-        message: 'Image uploaded successfully',
+        message: 'Stage added successfully',
         imageUrl,
-        fileKey
+        fileKey,
+        stageId: result.insertId
       });
+
     } catch (uploadError) {
       console.error('S3 upload error:', uploadError);
       throw new Error(`S3 upload failed: ${uploadError.message}`);
