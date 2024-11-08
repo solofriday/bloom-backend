@@ -110,8 +110,6 @@ app.get('/api/plants', async (req, res) => {
 // Image upload endpoint
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
-    console.log('Upload request received', { body: req.body, file: !!req.file });
-    
     if (!req.file) {
       return res.status(400).json({ message: 'No image file provided' });
     }
@@ -126,17 +124,7 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       });
     }
 
-    // First verify the plant exists
-    const [plants] = await pool.execute(
-      'SELECT id FROM plants WHERE id = ?',
-      [plantId]
-    );
-
-    if (!plants.length) {
-      return res.status(404).json({ message: 'Plant not found' });
-    }
-
-    // Generate a clean filename
+    // Generate unique filename
     const fileKey = `plants/${plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
     
     try {
