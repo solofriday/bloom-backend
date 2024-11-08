@@ -77,17 +77,23 @@ app.get('/api/plants', async (req, res) => {
         p.name,
         p.location,
         p.sensitivities,
-        JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'id', ps.id,
-            'status', ps.status,
-            'date', DATE_FORMAT(COALESCE(ps.date_taken, STR_TO_DATE(ps.date, '%Y-%m-%d')), '%Y-%m-%d'),
-            'image', ps.image_url
-          )
+        COALESCE(
+          JSON_ARRAYAGG(
+            IF(ps.id IS NOT NULL,
+              JSON_OBJECT(
+                'id', ps.id,
+                'status', ps.status,
+                'date', DATE_FORMAT(COALESCE(ps.date_taken, STR_TO_DATE(ps.date, '%Y-%m-%d')), '%Y-%m-%d'),
+                'image', ps.image_url
+              ),
+              NULL
+            )
+          ),
+          JSON_ARRAY()
         ) as stages
       FROM plants p
       LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-      GROUP BY p.id
+      GROUP BY p.id, p.name, p.location, p.sensitivities
       ORDER BY p.id
     `);
 
@@ -95,14 +101,18 @@ app.get('/api/plants', async (req, res) => {
       ...plant,
       sensitivities: JSON.parse(plant.sensitivities || '[]'),
       growthStages: JSON.parse(plant.stages || '[]')
-        .filter(stage => stage.id !== null)
+        .filter(Boolean) // Remove null values
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     }));
 
     res.json(plants);
   } catch (error) {
     console.error('Error fetching plants:', error);
-    res.status(500).json({ message: 'Error fetching plants', error: error.message });
+    res.status(500).json({ 
+      message: 'Error fetching plants', 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
