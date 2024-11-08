@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-const sharp = require('sharp');
 const { v4: uuidv4 } = require('uuid');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const mysql = require('mysql2/promise');
@@ -105,25 +104,20 @@ app.get('/api/plants', async (req, res) => {
   }
 });
 
-// Image upload endpoint
+// Image upload endpoint (no image processing)
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No image file provided' });
     }
 
-    const fileKey = `plants/${uuidv4()}.webp`;
-
-    const processedImageBuffer = await sharp(req.file.buffer)
-      .resize(800, 600, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer();
+    const fileKey = `plants/${uuidv4()}-${req.file.originalname}`;
 
     const command = new PutObjectCommand({
       Bucket: process.env.DO_SPACES_BUCKET,
       Key: fileKey,
-      Body: processedImageBuffer,
-      ContentType: 'image/webp',
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
       ACL: 'public-read',
     });
 
