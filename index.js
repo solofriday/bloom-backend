@@ -191,20 +191,25 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       );
       console.log('Database insert successful:', result);
 
-      // Get updated plant data
+      // Get updated plant data with a simpler query
       const [updatedPlant] = await pool.execute(`
-        SELECT p.*, 
-          (SELECT JSON_ARRAYAGG(
-            JSON_OBJECT(
-              'id', ps.id,
-              'status', ps.status,
-              'date', DATE_FORMAT(ps.date, '%Y-%m-%d'),
-              'image', ps.image_url
-            )
-          )
-          FROM plant_stages ps
-          WHERE ps.plant_id = p.id
-          ORDER BY ps.date DESC) as growthStages
+        SELECT 
+          p.*,
+          COALESCE(
+            (
+              SELECT JSON_ARRAYAGG(
+                JSON_OBJECT(
+                  'status', ps.status,
+                  'date', DATE_FORMAT(ps.date, '%Y-%m-%d'),
+                  'image', ps.image_url
+                )
+              )
+              FROM plant_stages ps
+              WHERE ps.plant_id = p.id
+              ORDER BY ps.date DESC
+            ),
+            '[]'
+          ) as growthStages
         FROM plants p
         WHERE p.id = ?
       `, [plantId]);
@@ -216,10 +221,7 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       const plant = {
         ...updatedPlant[0],
         sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
-        growthStages: JSON.parse(updatedPlant[0].growthStages || '[]').map(stage => ({
-          ...stage,
-          image: getCorrectImageUrl(stage.image)
-        }))
+        growthStages: JSON.parse(updatedPlant[0].growthStages)
       };
 
       console.log('Sending successful response');
