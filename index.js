@@ -178,8 +178,8 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
         ACL: 'public-read',
       });
 
-      await s3Client.send(command);
-      console.log('S3 upload successful');
+      const uploadResult = await s3Client.send(command);
+      console.log('S3 upload successful:', uploadResult);
 
       const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
       console.log('Generated image URL:', imageUrl);
@@ -209,6 +209,10 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
         WHERE p.id = ?
       `, [plantId]);
 
+      if (!updatedPlant[0]) {
+        throw new Error('Failed to fetch updated plant data');
+      }
+
       const plant = {
         ...updatedPlant[0],
         sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
@@ -227,21 +231,12 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       });
 
     } catch (uploadError) {
-      console.error('S3 upload error details:', {
-        error: uploadError,
-        message: uploadError.message,
-        code: uploadError.code,
-        stack: uploadError.stack
-      });
-      throw new Error(`S3 upload failed: ${uploadError.message}`);
+      console.error('S3 upload error:', uploadError);
+      throw new Error(uploadError.message || 'Failed to upload to S3');
     }
 
   } catch (error) {
-    console.error('Upload error details:', {
-      error,
-      message: error.message,
-      stack: error.stack
-    });
+    console.error('Upload error:', error);
     res.status(500).json({ 
       message: 'Error uploading image', 
       error: error.message,
