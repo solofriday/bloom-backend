@@ -110,6 +110,7 @@ app.get('/api/plants', async (req, res) => {
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
     console.log('Upload request received');
+    console.log('Headers:', req.headers);
     
     if (!req.file) {
       console.log('No file received');
@@ -119,38 +120,61 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
     console.log('File received:', {
       originalName: req.file.originalname,
       mimetype: req.file.mimetype,
-      size: req.file.size
+      size: req.file.size,
+      buffer: req.file.buffer ? 'Buffer present' : 'No buffer'
+    });
+
+    // Log Space credentials (don't log actual values)
+    console.log('Space config:', {
+      hasEndpoint: !!process.env.DO_SPACES_ENDPOINT,
+      hasBucket: !!process.env.DO_SPACES_BUCKET,
+      hasKey: !!process.env.DO_SPACES_KEY,
+      hasSecret: !!process.env.DO_SPACES_SECRET
     });
 
     // Generate unique filename
     const fileKey = `plants/${uuidv4()}-${req.file.originalname.replace(/\s+/g, '-')}`;
     console.log('Generated file key:', fileKey);
 
-    // Upload to DigitalOcean Spaces
-    const command = new PutObjectCommand({
-      Bucket: process.env.DO_SPACES_BUCKET,
-      Key: fileKey,
-      Body: req.file.buffer,
-      ContentType: req.file.mimetype,
-      ACL: 'public-read',
-    });
+    try {
+      // Upload to DigitalOcean Spaces
+      const command = new PutObjectCommand({
+        Bucket: process.env.DO_SPACES_BUCKET,
+        Key: fileKey,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype,
+        ACL: 'public-read',
+      });
 
-    await s3Client.send(command);
-    console.log('Upload to Spaces complete');
+      console.log('Attempting S3 upload...');
+      await s3Client.send(command);
+      console.log('Upload to Spaces complete');
 
-    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${fileKey}`;
-    
-    res.json({
-      message: 'Image uploaded successfully',
-      imageUrl,
-      fileKey
-    });
+      // Use the standard DigitalOcean Spaces URL format
+      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${fileKey}`;
+      console.log('Generated image URL:', imageUrl);
+      
+      res.json({
+        message: 'Image uploaded successfully',
+        imageUrl,
+        fileKey
+      });
+    } catch (uploadError) {
+      console.error('S3 upload error:', uploadError);
+      throw new Error(`S3 upload failed: ${uploadError.message}`);
+    }
 
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('Upload error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    
     res.status(500).json({ 
       message: 'Error uploading image', 
-      error: error.message 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
