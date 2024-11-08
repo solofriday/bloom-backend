@@ -1,110 +1,127 @@
+// server/index.js
 const express = require('express');
-const mysql = require('mysql2/promise');
-const cors = require('cors');
-const dotenv = require('dotenv');
+const { upload, processAndUploadImage } = require('./utils/s3');
+const authMiddleware = require('./middleware/auth');
+const { S3Client, ListBucketsCommand } = require('@aws-sdk/client-s3');
 
-dotenv.config();
+// ... (previous setup code)
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-  port: parseInt(process.env.DB_PORT || '25060'),
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
-
-// Test endpoint
-app.get('/', async (req, res) => {
+// Test endpoint for DigitalOcean Spaces connection
+app.get('/api/test-spaces', async (req, res) => {
   try {
-    const [result] = await pool.query('SELECT 1');
-    res.json({ message: 'Database connected successfully', test: result });
+    const s3Client = new S3Client({
+      endpoint: `https://${process.env.DO_SPACES_ENDPOINT}`,
+      region: "us-east-1", // DigitalOcean Spaces uses this region
+      credentials: {
+        accessKeyId: process.env.DO_SPACES_KEY,
+        secretAccessKey: process.env.DO_SPACES_SECRET
+      }
+    });
+
+    // Try to list buckets to test connection
+    const command = new ListBucketsCommand({});
+    const response = await s3Client.send(command);
+
+    res.json({
+      message: 'Successfully connected to DigitalOcean Spaces',
+      buckets: response.Buckets,
+      endpoint: process.env.DO_SPACES_ENDPOINT,
+      bucket: process.env.DO_SPACES_BUCKET
+    });
   } catch (error) {
-    console.error('Database connection error:', error);
-    res.status(500).json({ message: 'Database connection failed', error: error.message });
+    console.error('Spaces Error:', error);
+    res.status(500).json({
+      message: 'Failed to connect to DigitalOcean Spaces',
+      error: error.message,
+      endpoint: process.env.DO_SPACES_ENDPOINT,
+      hasKey: !!process.env.DO_SPACES_KEY,
+      hasSecret: !!process.env.DO_SPACES_SECRET
+    });
   }
 });
 
-// Get all plants with their stages
-app.get('/api/plants', async (req, res) => {
+// Get user's plants
+app.get('/api/plants', authMiddleware, async (req, res) => {
   try {
-    // First get the plants
     const [plants] = await pool.execute(`
-      SELECT id, name, location, sensitivities
-      FROM plants
-    `);
+      SELECT p.*, 
+        (SELECT JSON_ARRAYAGG(
+          JSON_OBJECT(
+            'id', ps.id,
+            'status', ps.status,
+            'date', ps.date,
+            'imageUrl', CONCAT('https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/', psi.file_key)
+          )
+        )
+        FROM plant_stages ps
+        LEFT JOIN plant_stage_images psi ON ps.id = psi.stage_id
+        WHERE ps.plant_id = p.id) as growthStages
+      FROM plants p
+      WHERE p.user_id = ?
+    `, [req.userId]);
 
-    // Then get stages for each plant
-    const plantsWithStages = await Promise.all(plants.map(async (plant) => {
-      const [stages] = await pool.execute(`
-        SELECT status, date, image_url as image
-        FROM plant_stages
-        WHERE plant_id = ?
-        ORDER BY date
-      `, [plant.id]);
-
-      return {
-        ...plant,
-        sensitivities: plant.sensitivities ? JSON.parse(plant.sensitivities) : [],
-        growthStages: stages.map(stage => ({
-          ...stage,
-          date: stage.date.toISOString().split('T')[0]
-        }))
-      };
-    }));
-
-    res.json(plantsWithStages);
+    res.json(plants);
   } catch (error) {
-    console.error('Error fetching plants:', error);
-    res.status(500).json({ message: 'Error fetching plants', error: error.message });
+    console.error('Error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
 
-// Get single plant with stages
-app.get('/api/plants/:id', async (req, res) => {
-  try {
-    // Get plant details
-    const [plants] = await pool.execute(`
-      SELECT id, name, location, sensitivities
-      FROM plants
-      WHERE id = ?
-    `, [req.params.id]);
+// Add new plant stage with image
+app.post('/api/plants/:plantId/stages', authMiddleware, upload.single('image'), async (req, res) => {
+  const { plantId } = req.params;
+  const { status, date } = req.body;
 
-    if (!plants[0]) {
-      return res.status(404).json({ message: 'Plant not found' });
+  try {
+    // Verify plant belongs to user
+    const [plants] = await pool.execute(
+      'SELECT id FROM plants WHERE id = ? AND user_id = ?',
+      [plantId, req.userId]
+    );
+
+    if (!plants.length) {
+      return res.status(404).json({ message: 'Plant not found or unauthorized' });
     }
 
-    // Get plant stages
-    const [stages] = await pool.execute(`
-      SELECT status, date, image_url as image
-      FROM plant_stages
-      WHERE plant_id = ?
-      ORDER BY date
-    `, [req.params.id]);
+    // Start transaction
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
 
-    const plant = {
-      ...plants[0],
-      sensitivities: plants[0].sensitivities ? JSON.parse(plants[0].sensitivities) : [],
-      growthStages: stages.map(stage => ({
-        ...stage,
-        date: stage.date.toISOString().split('T')[0]
-      }))
-    };
+    try {
+      // Insert stage
+      const [stageResult] = await connection.execute(
+        'INSERT INTO plant_stages (plant_id, status, date) VALUES (?, ?, ?)',
+        [plantId, status, date]
+      );
+      const stageId = stageResult.insertId;
 
-    res.json(plant);
+      // Process and upload image if provided
+      let imageUrl = null;
+      if (req.file) {
+        const { fileKey, url } = await processAndUploadImage(req.file, req.userId);
+        await connection.execute(
+          'INSERT INTO plant_stage_images (stage_id, file_key) VALUES (?, ?)',
+          [stageId, fileKey]
+        );
+        imageUrl = url;
+      }
+
+      await connection.commit();
+      
+      res.json({
+        id: stageId,
+        status,
+        date,
+        imageUrl
+      });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   } catch (error) {
-    console.error('Error fetching plant:', error);
-    res.status(500).json({ message: 'Error fetching plant', error: error.message });
+    console.error('Error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
-});
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
 });
