@@ -1,8 +1,8 @@
 // index.js
-import express from 'express';
-import mysql from 'mysql2/promise';
-import cors from 'cors';
-import dotenv from 'dotenv';
+const express = require('express');
+const mysql = require('mysql2/promise');
+const cors = require('cors');
+const dotenv = require('dotenv');
 
 dotenv.config();
 
