@@ -13,19 +13,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// MySQL connection
+// MySQL connection pool with optimized settings
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_DATABASE,
   port: parseInt(process.env.DB_PORT || '25060'),
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: { rejectUnauthorized: false },
+  connectionLimit: 10,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 });
 
-// S3 client
+// S3 client with optimized settings
 const s3Client = new S3Client({
   endpoint: "https://nyc3.digitaloceanspaces.com",
   region: "us-east-1",
@@ -33,14 +35,16 @@ const s3Client = new S3Client({
     accessKeyId: process.env.DO_SPACES_KEY,
     secretAccessKey: process.env.DO_SPACES_SECRET
   },
-  forcePathStyle: false
+  forcePathStyle: false,
+  maxAttempts: 3
 });
 
-// Multer setup
+// Multer setup with optimized file size
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
+    files: 1 // Only allow 1 file per request
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
@@ -51,229 +55,140 @@ const upload = multer({
   },
 });
 
-// Add this helper function at the top of your file
-function getCorrectImageUrl(imageUrl) {
-  // Fix URLs that have duplicate bucket names
-  return imageUrl.replace(
-    /https:\/\/bloom-bucket\.bloom-bucket\./,
-    'https://bloom-bucket.'
-  );
-}
-
-// Add helper function to extract date from EXIF data
+// Helper function to get image date from EXIF
 async function getImageDate(buffer) {
   try {
-    // Read EXIF data from buffer
-    const exif = ExifReader(buffer);
-    
-    if (exif && exif.exif && exif.exif.DateTimeOriginal) {
-      // EXIF dates are in format "YYYY:MM:DD HH:MM:SS"
-      const exifDate = exif.exif.DateTimeOriginal;
-      return new Date(exifDate.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'));
+    const exifData = ExifReader.load(buffer);
+    if (exifData?.DateTimeOriginal?.description) {
+      return new Date(exifData.DateTimeOriginal.description.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'));
     }
   } catch (err) {
-    console.log('No EXIF data found or error reading EXIF:', err);
+    console.log('No EXIF data found');
   }
-  
-  return new Date(); // Default to current date if no EXIF data
+  return new Date();
 }
 
-// Test endpoint
-app.get('/', (req, res) => {
-  res.json({ message: 'Server is running' });
-});
-
-// Debug endpoint
-app.get('/api/debug', (req, res) => {
-  res.json({
-    hasSpacesEndpoint: !!process.env.DO_SPACES_ENDPOINT,
-    hasSpacesKey: !!process.env.DO_SPACES_KEY,
-    hasSpacesSecret: !!process.env.DO_SPACES_SECRET,
-    hasSpacesBucket: !!process.env.DO_SPACES_BUCKET,
-    endpoint: process.env.DO_SPACES_ENDPOINT
-  });
-});
-
-// Plants endpoint
+// Optimized plants endpoint with single query
 app.get('/api/plants', async (req, res) => {
   try {
-    console.log('Fetching plants...');
-    
-    // Get basic plant info
-    const [plants] = await pool.execute(`
-      SELECT id, name, location, sensitivities 
-      FROM plants
+    const [results] = await pool.execute(`
+      SELECT 
+        p.id,
+        p.name,
+        p.location,
+        p.sensitivities,
+        JSON_ARRAYAGG(
+          JSON_OBJECT(
+            'id', ps.id,
+            'status', ps.status,
+            'date', DATE_FORMAT(COALESCE(ps.date_taken, STR_TO_DATE(ps.date, '%Y-%m-%d')), '%Y-%m-%d'),
+            'image', ps.image_url
+          )
+        ) as stages
+      FROM plants p
+      LEFT JOIN plant_stages ps ON p.id = ps.plant_id
+      GROUP BY p.id
+      ORDER BY p.id
     `);
-    
-    // Get stages for each plant
-    const plantsWithStages = await Promise.all(plants.map(async (plant) => {
-      const [stages] = await pool.execute(`
-        SELECT 
-          id,
-          status,
-          DATE_FORMAT(date_taken, '%Y-%m-%d') as date,
-          image_url as image
-        FROM plant_stages 
-        WHERE plant_id = ?
-        ORDER BY date_taken DESC, id DESC
-      `, [plant.id]);
 
-      // Fix image URLs in stages
-      const fixedStages = stages.map(stage => ({
-        ...stage,
-        image: getCorrectImageUrl(stage.image)
-      }));
-
-      return {
-        ...plant,
-        sensitivities: plant.sensitivities ? JSON.parse(plant.sensitivities) : [],
-        growthStages: fixedStages || []
-      };
+    const plants = results.map(plant => ({
+      ...plant,
+      sensitivities: JSON.parse(plant.sensitivities || '[]'),
+      growthStages: JSON.parse(plant.stages || '[]')
+        .filter(stage => stage.id !== null)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     }));
 
-    res.json(plantsWithStages);
-    
+    res.json(plants);
   } catch (error) {
     console.error('Error fetching plants:', error);
-    res.status(500).json({ 
-      message: 'Error fetching plants', 
-      error: error.message 
-    });
+    res.status(500).json({ message: 'Error fetching plants', error: error.message });
   }
 });
 
-// Image upload endpoint
+// Optimized upload endpoint
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
-    console.log('Upload request received:', {
-      file: req.file ? {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size
-      } : 'No file',
-      body: req.body
-    });
-
-    if (!req.file) {
-      return res.status(400).json({ message: 'No image file provided' });
-    }
-
-    const { status, plantId } = req.body;
-    console.log('Processing upload with:', { status, plantId });
-
-    if (!status || !plantId) {
+    if (!req.file || !req.body.status || !req.body.plantId) {
       return res.status(400).json({ 
         message: 'Missing required fields', 
-        received: { status, plantId } 
+        received: { 
+          file: !!req.file, 
+          ...req.body 
+        } 
       });
     }
 
-    // First verify the plant exists
-    console.log('Verifying plant exists:', plantId);
+    // Verify plant exists
     const [plants] = await pool.execute(
       'SELECT id FROM plants WHERE id = ?',
-      [plantId]
+      [req.body.plantId]
     );
 
     if (!plants.length) {
       return res.status(404).json({ message: 'Plant not found' });
     }
 
-    // Generate unique filename
-    const fileKey = `plants/${plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
-    console.log('Generated file key:', fileKey);
+    // Upload to S3
+    const fileKey = `plants/${req.body.plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+    await s3Client.send(new PutObjectCommand({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      Key: fileKey,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+      ACL: 'public-read',
+    }));
 
+    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
+    const dateTaken = await getImageDate(req.file.buffer);
+
+    // Insert new stage and get updated plant data in a transaction
+    const connection = await pool.getConnection();
     try {
-      console.log('Attempting S3 upload with:', {
-        bucket: process.env.DO_SPACES_BUCKET,
-        fileKey,
-        contentType: req.file.mimetype
-      });
+      await connection.beginTransaction();
 
-      const command = new PutObjectCommand({
-        Bucket: process.env.DO_SPACES_BUCKET,
-        Key: fileKey,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-        ACL: 'public-read',
-      });
-
-      await s3Client.send(command);
-      console.log('S3 upload successful');
-
-      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
-      console.log('Generated image URL:', imageUrl);
-
-      // Get date from EXIF data or use current date
-      const dateTaken = await getImageDate(req.file.buffer);
-      console.log('Image date taken:', dateTaken);
-
-      console.log('Inserting stage into database');
-      const [result] = await pool.execute(
+      const [result] = await connection.execute(
         'INSERT INTO plant_stages (plant_id, status, date_taken, image_url) VALUES (?, ?, ?, ?)',
-        [plantId, status, dateTaken, imageUrl]
+        [req.body.plantId, req.body.status, dateTaken, imageUrl]
       );
-      console.log('Database insert successful:', result);
 
-      // Get updated plant data with a simpler query
-      const [updatedPlant] = await pool.execute(`
-        SELECT 
-          p.*,
-          COALESCE(
-            (
-              SELECT JSON_ARRAYAGG(
-                JSON_OBJECT(
-                  'id', ps.id,
-                  'status', ps.status,
-                  'date', DATE_FORMAT(ps.date_taken, '%Y-%m-%d'),
-                  'image', ps.image_url
-                )
-                ORDER BY ps.date_taken DESC, ps.id DESC
-              )
-              FROM plant_stages ps
-              WHERE ps.plant_id = p.id
-            ),
-            '[]'
-          ) as growthStages
+      const [updatedPlant] = await connection.execute(`
+        SELECT p.*, 
+          JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ps.id,
+              'status', ps.status,
+              'date', DATE_FORMAT(ps.date_taken, '%Y-%m-%d'),
+              'image', ps.image_url
+            )
+            ORDER BY ps.date_taken DESC
+          ) as stages
         FROM plants p
+        LEFT JOIN plant_stages ps ON p.id = ps.plant_id
         WHERE p.id = ?
-      `, [plantId]);
+        GROUP BY p.id
+      `, [req.body.plantId]);
 
-      if (!updatedPlant[0]) {
-        throw new Error('Failed to fetch updated plant data');
-      }
+      await connection.commit();
 
       const plant = {
         ...updatedPlant[0],
         sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
-        growthStages: JSON.parse(updatedPlant[0].growthStages)
+        growthStages: JSON.parse(updatedPlant[0].stages || '[]').filter(stage => stage.id !== null)
       };
 
-      console.log('Sending successful response');
-      res.json({
-        message: 'Stage added successfully',
-        imageUrl,
-        stageId: result.insertId,
-        plant
-      });
-
-    } catch (uploadError) {
-      console.error('S3 upload error:', uploadError);
-      throw new Error(uploadError.message || 'Failed to upload to S3');
+      res.json({ message: 'Stage added successfully', imageUrl, stageId: result.insertId, plant });
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
     }
-
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ 
-      message: 'Error uploading image', 
-      error: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    res.status(500).json({ message: 'Error uploading image', error: error.message });
   }
 });
 
-// Start server
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+app.listen(port, () => console.log(`Server running on port ${port}`));
