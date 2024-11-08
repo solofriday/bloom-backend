@@ -34,29 +34,32 @@ app.get('/', async (req, res) => {
 // Get all plants with their stages
 app.get('/api/plants', async (req, res) => {
   try {
-    const [rows] = await pool.execute(`
-      SELECT 
-        p.*,
-        JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'status', ps.status,
-            'date', DATE_FORMAT(ps.date, '%Y-%m-%d'),
-            'image', ps.image_url
-          )
-        ) as growthStages
-      FROM plants p
-      LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-      GROUP BY p.id
+    // First get the plants
+    const [plants] = await pool.execute(`
+      SELECT id, name, location, sensitivities
+      FROM plants
     `);
-    
-    // Parse the JSON string in sensitivities and growthStages
-    const plants = rows.map(plant => ({
-      ...plant,
-      sensitivities: JSON.parse(plant.sensitivities || '[]'),
-      growthStages: JSON.parse(plant.growthStages || '[]')
+
+    // Then get stages for each plant
+    const plantsWithStages = await Promise.all(plants.map(async (plant) => {
+      const [stages] = await pool.execute(`
+        SELECT status, date, image_url as image
+        FROM plant_stages
+        WHERE plant_id = ?
+        ORDER BY date
+      `, [plant.id]);
+
+      return {
+        ...plant,
+        sensitivities: plant.sensitivities ? JSON.parse(plant.sensitivities) : [],
+        growthStages: stages.map(stage => ({
+          ...stage,
+          date: stage.date.toISOString().split('T')[0]
+        }))
+      };
     }));
-    
-    res.json(plants);
+
+    res.json(plantsWithStages);
   } catch (error) {
     console.error('Error fetching plants:', error);
     res.status(500).json({ message: 'Error fetching plants', error: error.message });
@@ -66,33 +69,34 @@ app.get('/api/plants', async (req, res) => {
 // Get single plant with stages
 app.get('/api/plants/:id', async (req, res) => {
   try {
-    const [rows] = await pool.execute(`
-      SELECT 
-        p.*,
-        JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'status', ps.status,
-            'date', DATE_FORMAT(ps.date, '%Y-%m-%d'),
-            'image', ps.image_url
-          )
-        ) as growthStages
-      FROM plants p
-      LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-      WHERE p.id = ?
-      GROUP BY p.id
+    // Get plant details
+    const [plants] = await pool.execute(`
+      SELECT id, name, location, sensitivities
+      FROM plants
+      WHERE id = ?
     `, [req.params.id]);
-    
-    if (!rows[0]) {
+
+    if (!plants[0]) {
       return res.status(404).json({ message: 'Plant not found' });
     }
-    
-    // Parse the JSON strings
+
+    // Get plant stages
+    const [stages] = await pool.execute(`
+      SELECT status, date, image_url as image
+      FROM plant_stages
+      WHERE plant_id = ?
+      ORDER BY date
+    `, [req.params.id]);
+
     const plant = {
-      ...rows[0],
-      sensitivities: JSON.parse(rows[0].sensitivities || '[]'),
-      growthStages: JSON.parse(rows[0].growthStages || '[]')
+      ...plants[0],
+      sensitivities: plants[0].sensitivities ? JSON.parse(plants[0].sensitivities) : [],
+      growthStages: stages.map(stage => ({
+        ...stage,
+        date: stage.date.toISOString().split('T')[0]
+      }))
     };
-    
+
     res.json(plant);
   } catch (error) {
     console.error('Error fetching plant:', error);
