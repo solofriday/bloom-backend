@@ -110,66 +110,85 @@ app.get('/api/plants', async (req, res) => {
 // Image upload endpoint
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
-    console.log('Upload request received');
+    console.log('Upload request received', { body: req.body, file: !!req.file });
     
     if (!req.file) {
       return res.status(400).json({ message: 'No image file provided' });
     }
 
-    // Add validation for required fields
-    const { status, date, plantId } = req.body;
-    if (!status || !date || !plantId) {
-      return res.status(400).json({ message: 'Missing required fields' });
+    const { status, plantId } = req.body;
+    const date = new Date().toISOString().split('T')[0]; // Today's date
+
+    if (!status || !plantId) {
+      return res.status(400).json({ 
+        message: 'Missing required fields', 
+        received: { status, plantId } 
+      });
     }
 
-    // Update fileKey to include plantId in path
+    // First verify the plant exists
+    const [plants] = await pool.execute(
+      'SELECT id FROM plants WHERE id = ?',
+      [plantId]
+    );
+
+    if (!plants.length) {
+      return res.status(404).json({ message: 'Plant not found' });
+    }
+
     const fileKey = `plants/${plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
     
-    try {
-      const command = new PutObjectCommand({
-        Bucket: process.env.DO_SPACES_BUCKET,
-        Key: fileKey,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-        ACL: 'public-read',
-      });
+    const command = new PutObjectCommand({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      Key: fileKey,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+      ACL: 'public-read',
+    });
 
-      console.log('Attempting S3 upload...');
-      await s3Client.send(command);
-      console.log('Upload to Spaces complete');
+    await s3Client.send(command);
+    
+    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${fileKey}`;
 
-      // Update imageUrl construction to use environment variable
-      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${fileKey}`;
-      console.log('Generated image URL:', imageUrl);
-      
-      // Add database insert
-      const [result] = await pool.execute(
-        'INSERT INTO plant_stages (plant_id, status, date, image_url) VALUES (?, ?, ?, ?)',
-        [plantId, status, date, imageUrl]
-      );
+    const [result] = await pool.execute(
+      'INSERT INTO plant_stages (plant_id, status, date, image_url) VALUES (?, ?, ?, ?)',
+      [plantId, status, date, imageUrl]
+    );
 
-      res.json({
-        message: 'Stage added successfully',
-        imageUrl,
-        fileKey,
-        stageId: result.insertId
-      });
+    // Get the plant data with the new stage
+    const [updatedPlant] = await pool.execute(`
+      SELECT p.*, 
+        (SELECT JSON_ARRAYAGG(
+          JSON_OBJECT(
+            'id', ps.id,
+            'status', ps.status,
+            'date', DATE_FORMAT(ps.date, '%Y-%m-%d'),
+            'image', ps.image_url
+          )
+        )
+        FROM plant_stages ps
+        WHERE ps.plant_id = p.id
+        ORDER BY ps.date DESC) as growthStages
+      FROM plants p
+      WHERE p.id = ?
+    `, [plantId]);
 
-    } catch (uploadError) {
-      console.error('S3 upload error:', uploadError);
-      throw new Error(`S3 upload failed: ${uploadError.message}`);
-    }
+    res.json({
+      message: 'Stage added successfully',
+      imageUrl,
+      stageId: result.insertId,
+      plant: {
+        ...updatedPlant[0],
+        sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
+        growthStages: JSON.parse(updatedPlant[0].growthStages || '[]')
+      }
+    });
 
   } catch (error) {
-    console.error('Upload error details:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
-    
+    console.error('Upload error:', error);
     res.status(500).json({ 
       message: 'Error uploading image', 
-      error: error.message
+      error: error.message 
     });
   }
 });
