@@ -125,12 +125,21 @@ app.get('/api/plants', async (req, res) => {
 // Image upload endpoint
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
+    console.log('Upload request received:', {
+      file: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      } : 'No file',
+      body: req.body
+    });
+
     if (!req.file) {
       return res.status(400).json({ message: 'No image file provided' });
     }
 
     const { status, plantId } = req.body;
-    const date = new Date().toISOString().split('T')[0];
+    console.log('Processing upload with:', { status, plantId });
 
     if (!status || !plantId) {
       return res.status(400).json({ 
@@ -139,10 +148,28 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       });
     }
 
+    // First verify the plant exists
+    console.log('Verifying plant exists:', plantId);
+    const [plants] = await pool.execute(
+      'SELECT id FROM plants WHERE id = ?',
+      [plantId]
+    );
+
+    if (!plants.length) {
+      return res.status(404).json({ message: 'Plant not found' });
+    }
+
     // Generate unique filename
     const fileKey = `plants/${plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
-    
+    console.log('Generated file key:', fileKey);
+
     try {
+      console.log('Attempting S3 upload with:', {
+        bucket: process.env.DO_SPACES_BUCKET,
+        fileKey,
+        contentType: req.file.mimetype
+      });
+
       const command = new PutObjectCommand({
         Bucket: process.env.DO_SPACES_BUCKET,
         Key: fileKey,
@@ -152,17 +179,19 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       });
 
       await s3Client.send(command);
-      
-      // Construct the correct URL format
-      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
+      console.log('S3 upload successful');
 
-      // Insert the new stage into the database
+      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
+      console.log('Generated image URL:', imageUrl);
+
+      console.log('Inserting stage into database');
       const [result] = await pool.execute(
         'INSERT INTO plant_stages (plant_id, status, date, image_url) VALUES (?, ?, ?, ?)',
-        [plantId, status, date, imageUrl]
+        [plantId, status, new Date().toISOString().split('T')[0], imageUrl]
       );
+      console.log('Database insert successful:', result);
 
-      // Get the updated plant data with fixed URLs
+      // Get updated plant data
       const [updatedPlant] = await pool.execute(`
         SELECT p.*, 
           (SELECT JSON_ARRAYAGG(
@@ -180,7 +209,6 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
         WHERE p.id = ?
       `, [plantId]);
 
-      // Fix URLs in the response
       const plant = {
         ...updatedPlant[0],
         sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
@@ -190,6 +218,7 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
         }))
       };
 
+      console.log('Sending successful response');
       res.json({
         message: 'Stage added successfully',
         imageUrl,
@@ -198,15 +227,25 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       });
 
     } catch (uploadError) {
-      console.error('S3 upload error:', uploadError);
+      console.error('S3 upload error details:', {
+        error: uploadError,
+        message: uploadError.message,
+        code: uploadError.code,
+        stack: uploadError.stack
+      });
       throw new Error(`S3 upload failed: ${uploadError.message}`);
     }
 
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('Upload error details:', {
+      error,
+      message: error.message,
+      stack: error.stack
+    });
     res.status(500).json({ 
       message: 'Error uploading image', 
-      error: error.message 
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
