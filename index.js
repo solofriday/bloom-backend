@@ -1,15 +1,81 @@
-// Update just the plants endpoint in your index.js
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const sharp = require('sharp');
+const { v4: uuidv4 } = require('uuid');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const mysql = require('mysql2/promise');
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+// MySQL connection
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
+  port: parseInt(process.env.DB_PORT || '25060'),
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// S3 client
+const s3Client = new S3Client({
+  endpoint: `https://${process.env.DO_SPACES_ENDPOINT}`,
+  region: "us-east-1",
+  credentials: {
+    accessKeyId: process.env.DO_SPACES_KEY,
+    secretAccessKey: process.env.DO_SPACES_SECRET
+  }
+});
+
+// Multer setup
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Not an image! Please upload an image.'), false);
+    }
+  },
+});
+
+// Test endpoint
+app.get('/', (req, res) => {
+  res.json({ message: 'Server is running' });
+});
+
+// Debug endpoint
+app.get('/api/debug', (req, res) => {
+  res.json({
+    hasSpacesEndpoint: !!process.env.DO_SPACES_ENDPOINT,
+    hasSpacesKey: !!process.env.DO_SPACES_KEY,
+    hasSpacesSecret: !!process.env.DO_SPACES_SECRET,
+    hasSpacesBucket: !!process.env.DO_SPACES_BUCKET,
+    endpoint: process.env.DO_SPACES_ENDPOINT
+  });
+});
+
+// Get all plants
 app.get('/api/plants', async (req, res) => {
   try {
     console.log('Fetching plants...');
     
-    // First, get basic plant info
+    // Get basic plant info
     const [plants] = await pool.execute(`
       SELECT id, name, location, sensitivities 
       FROM plants
     `);
     
-    // Then get stages for each plant
+    // Get stages for each plant
     const plantsWithStages = await Promise.all(plants.map(async (plant) => {
       const [stages] = await pool.execute(`
         SELECT 
@@ -24,19 +90,63 @@ app.get('/api/plants', async (req, res) => {
       return {
         ...plant,
         sensitivities: plant.sensitivities ? JSON.parse(plant.sensitivities) : [],
-        growthStages: stages
+        growthStages: stages || []
       };
     }));
 
-    console.log('Processed plants:', JSON.stringify(plantsWithStages, null, 2));
     res.json(plantsWithStages);
     
   } catch (error) {
     console.error('Error fetching plants:', error);
     res.status(500).json({ 
       message: 'Error fetching plants', 
-      error: error.message,
-      stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined
+      error: error.message 
     });
   }
+});
+
+// Image upload endpoint
+app.post('/api/upload', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
+    }
+
+    const fileKey = `plants/${uuidv4()}.webp`;
+
+    const processedImageBuffer = await sharp(req.file.buffer)
+      .resize(800, 600, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+
+    const command = new PutObjectCommand({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      Key: fileKey,
+      Body: processedImageBuffer,
+      ContentType: 'image/webp',
+      ACL: 'public-read',
+    });
+
+    await s3Client.send(command);
+
+    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${fileKey}`;
+    
+    res.json({
+      message: 'Image uploaded successfully',
+      imageUrl,
+      fileKey
+    });
+
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ 
+      message: 'Error uploading image', 
+      error: error.message 
+    });
+  }
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });
