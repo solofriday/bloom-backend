@@ -178,8 +178,8 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
         ACL: 'public-read',
       });
 
-      const uploadResult = await s3Client.send(command);
-      console.log('S3 upload successful:', uploadResult);
+      await s3Client.send(command);
+      console.log('S3 upload successful');
 
       const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
       console.log('Generated image URL:', imageUrl);
