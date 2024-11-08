@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
@@ -10,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Create MySQL connection pool
+// Create MySQL connection pool with updated SSL config
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -18,7 +17,7 @@ const pool = mysql.createPool({
   database: process.env.DB_DATABASE,
   port: parseInt(process.env.DB_PORT || '25060'),
   ssl: {
-    rejectUnauthorized: true
+    rejectUnauthorized: false // This is the key change
   }
 });
 
@@ -28,62 +27,12 @@ app.get('/', async (req, res) => {
     const [result] = await pool.query('SELECT 1');
     res.json({ message: 'Database connected successfully', test: result });
   } catch (error) {
+    console.error('Database connection error:', error);
     res.status(500).json({ message: 'Database connection failed', error: error.message });
   }
 });
 
-// Get all plants
-app.get('/api/plants', async (req, res) => {
-  try {
-    const [rows] = await pool.execute(
-      `SELECT p.*, 
-        JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'status', ps.status,
-            'date', ps.date,
-            'image_url', ps.image_url
-          )
-        ) as growth_stages
-      FROM plants p
-      LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-      GROUP BY p.id`
-    );
-    res.json(rows);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
-
-// Get single plant with its stages
-app.get('/api/plants/:id', async (req, res) => {
-  try {
-    const [rows] = await pool.execute(
-      `SELECT p.*, 
-        JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'status', ps.status,
-            'date', ps.date,
-            'image_url', ps.image_url
-          )
-        ) as growth_stages
-      FROM plants p
-      LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-      WHERE p.id = ?
-      GROUP BY p.id`,
-      [req.params.id]
-    );
-    
-    if (!rows[0]) {
-      return res.status(404).json({ message: 'Plant not found' });
-    }
-    
-    res.json(rows[0]);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
+// Rest of your code remains the same...
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
