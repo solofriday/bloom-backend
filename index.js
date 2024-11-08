@@ -26,12 +26,13 @@ const pool = mysql.createPool({
 
 // S3 client
 const s3Client = new S3Client({
-  endpoint: `https://${process.env.DO_SPACES_ENDPOINT}`,
+  endpoint: "https://nyc3.digitaloceanspaces.com",
   region: "us-east-1",
   credentials: {
     accessKeyId: process.env.DO_SPACES_KEY,
     secretAccessKey: process.env.DO_SPACES_SECRET
-  }
+  },
+  forcePathStyle: false
 });
 
 // Multer setup
@@ -110,34 +111,16 @@ app.get('/api/plants', async (req, res) => {
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
     console.log('Upload request received');
-    console.log('Headers:', req.headers);
     
     if (!req.file) {
       console.log('No file received');
       return res.status(400).json({ message: 'No image file provided' });
     }
 
-    console.log('File received:', {
-      originalName: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      buffer: req.file.buffer ? 'Buffer present' : 'No buffer'
-    });
-
-    // Log Space credentials (don't log actual values)
-    console.log('Space config:', {
-      hasEndpoint: !!process.env.DO_SPACES_ENDPOINT,
-      hasBucket: !!process.env.DO_SPACES_BUCKET,
-      hasKey: !!process.env.DO_SPACES_KEY,
-      hasSecret: !!process.env.DO_SPACES_SECRET
-    });
-
-    // Generate unique filename
-    const fileKey = `plants/${uuidv4()}-${req.file.originalname.replace(/\s+/g, '-')}`;
-    console.log('Generated file key:', fileKey);
-
+    // Generate unique filename with sanitized original name
+    const fileKey = `plants/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+    
     try {
-      // Upload to DigitalOcean Spaces
       const command = new PutObjectCommand({
         Bucket: process.env.DO_SPACES_BUCKET,
         Key: fileKey,
@@ -150,8 +133,8 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       await s3Client.send(command);
       console.log('Upload to Spaces complete');
 
-      // Use the standard DigitalOcean Spaces URL format
-      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${fileKey}`;
+      // Construct the URL using the standard DigitalOcean Spaces format
+      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
       console.log('Generated image URL:', imageUrl);
       
       res.json({
@@ -173,8 +156,7 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
     
     res.status(500).json({ 
       message: 'Error uploading image', 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message
     });
   }
 });
