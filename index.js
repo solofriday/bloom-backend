@@ -117,7 +117,7 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
     }
 
     const { status, plantId } = req.body;
-    const date = new Date().toISOString().split('T')[0]; // Today's date
+    const date = new Date().toISOString().split('T')[0];
 
     if (!status || !plantId) {
       return res.status(400).json({ 
@@ -136,53 +136,62 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
       return res.status(404).json({ message: 'Plant not found' });
     }
 
+    // Generate a clean filename
     const fileKey = `plants/${plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
     
-    const command = new PutObjectCommand({
-      Bucket: process.env.DO_SPACES_BUCKET,
-      Key: fileKey,
-      Body: req.file.buffer,
-      ContentType: req.file.mimetype,
-      ACL: 'public-read',
-    });
+    try {
+      const command = new PutObjectCommand({
+        Bucket: process.env.DO_SPACES_BUCKET,
+        Key: fileKey,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype,
+        ACL: 'public-read',
+      });
 
-    await s3Client.send(command);
-    
-    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.${process.env.DO_SPACES_ENDPOINT}/${fileKey}`;
+      await s3Client.send(command);
+      
+      // Construct the correct URL format for DigitalOcean Spaces
+      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
 
-    const [result] = await pool.execute(
-      'INSERT INTO plant_stages (plant_id, status, date, image_url) VALUES (?, ?, ?, ?)',
-      [plantId, status, date, imageUrl]
-    );
+      // Insert the new stage into the database
+      const [result] = await pool.execute(
+        'INSERT INTO plant_stages (plant_id, status, date, image_url) VALUES (?, ?, ?, ?)',
+        [plantId, status, date, imageUrl]
+      );
 
-    // Get the plant data with the new stage
-    const [updatedPlant] = await pool.execute(`
-      SELECT p.*, 
-        (SELECT JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'id', ps.id,
-            'status', ps.status,
-            'date', DATE_FORMAT(ps.date, '%Y-%m-%d'),
-            'image', ps.image_url
+      // Get the updated plant data
+      const [updatedPlant] = await pool.execute(`
+        SELECT p.*, 
+          (SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', ps.id,
+              'status', ps.status,
+              'date', DATE_FORMAT(ps.date, '%Y-%m-%d'),
+              'image', ps.image_url
+            )
           )
-        )
-        FROM plant_stages ps
-        WHERE ps.plant_id = p.id
-        ORDER BY ps.date DESC) as growthStages
-      FROM plants p
-      WHERE p.id = ?
-    `, [plantId]);
+          FROM plant_stages ps
+          WHERE ps.plant_id = p.id
+          ORDER BY ps.date DESC) as growthStages
+        FROM plants p
+        WHERE p.id = ?
+      `, [plantId]);
 
-    res.json({
-      message: 'Stage added successfully',
-      imageUrl,
-      stageId: result.insertId,
-      plant: {
-        ...updatedPlant[0],
-        sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
-        growthStages: JSON.parse(updatedPlant[0].growthStages || '[]')
-      }
-    });
+      res.json({
+        message: 'Stage added successfully',
+        imageUrl,
+        stageId: result.insertId,
+        plant: {
+          ...updatedPlant[0],
+          sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
+          growthStages: JSON.parse(updatedPlant[0].growthStages || '[]')
+        }
+      });
+
+    } catch (uploadError) {
+      console.error('S3 upload error:', uploadError);
+      throw new Error(`S3 upload failed: ${uploadError.message}`);
+    }
 
   } catch (error) {
     console.error('Upload error:', error);
