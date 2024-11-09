@@ -70,37 +70,16 @@ async function getImageDate(buffer) {
   }
 }
 
-// Optimized plants endpoint with single query
+// Optimized plants endpoint using stored procedure
 app.get('/api/plants', async (req, res) => {
   try {
-    // First, get all plants
-    const [plants] = await pool.execute(`
-      SELECT id, name, location, sensitivities
-      FROM plants
-      ORDER BY id
-    `);
-
-    // Then get stages for each plant
-    const plantsWithStages = await Promise.all(plants.map(async (plant) => {
-      const [stages] = await pool.execute(`
-        SELECT 
-          id,
-          status,
-          DATE_FORMAT(COALESCE(date_taken, STR_TO_DATE(date, '%Y-%m-%d')), '%Y-%m-%d') as date,
-          image_url as image
-        FROM plant_stages 
-        WHERE plant_id = ?
-        ORDER BY COALESCE(date_taken, STR_TO_DATE(date, '%Y-%m-%d')) DESC
-      `, [plant.id]);
-
-      return {
-        ...plant,
-        sensitivities: JSON.parse(plant.sensitivities || '[]'),
-        growthStages: stages || []
-      };
+    const [results] = await pool.execute('CALL GetPlantsWithStages()');
+    const plantsWithStages = results[0].map(plant => ({
+      ...plant,
+      sensitivities: JSON.parse(plant.sensitivities || '[]'),
+      growthStages: JSON.parse(plant.stages || '[]').filter(stage => stage.id !== null)
     }));
 
-    // Add debug logging
     console.log('Sending plants data:', {
       count: plantsWithStages.length,
       firstPlant: plantsWithStages[0]
