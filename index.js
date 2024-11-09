@@ -62,10 +62,12 @@ async function getImageDate(buffer) {
     if (exifData?.DateTimeOriginal?.description) {
       return new Date(exifData.DateTimeOriginal.description.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'));
     }
+    console.log('No DateTimeOriginal in EXIF data, using current date/time');
+    return new Date();
   } catch (err) {
-    console.log('No EXIF data found');
+    console.log('Error reading EXIF data:', err.message);
+    return new Date();
   }
-  return new Date();
 }
 
 // Optimized plants endpoint with single query
