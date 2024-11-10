@@ -74,11 +74,30 @@ async function getImageDate(buffer) {
 app.get('/api/plants', async (req, res) => {
   try {
     const [results] = await pool.execute('CALL GetPlantsWithStages()');
-    const plantsWithStages = results[0].map(plant => ({
-      ...plant,
-      sensitivities: JSON.parse(plant.sensitivities || '[]'),
-      growthStages: JSON.parse(plant.stages || '[]').filter(stage => stage.id !== null)
-    }));
+    const plantsWithStages = results[0].map(plant => {
+      let stages = [];
+      let sensitivities = [];
+      
+      try {
+        // Check if stages is a string before parsing
+        stages = typeof plant.stages === 'string' 
+          ? JSON.parse(plant.stages) 
+          : (plant.stages || []);
+        
+        // Check if sensitivities is a string before parsing
+        sensitivities = typeof plant.sensitivities === 'string' 
+          ? JSON.parse(plant.sensitivities) 
+          : (plant.sensitivities || []);
+      } catch (parseError) {
+        console.error('JSON parsing error:', parseError);
+      }
+
+      return {
+        ...plant,
+        sensitivities,
+        growthStages: stages.filter(stage => stage && stage.id !== null)
+      };
+    });
 
     console.log('Sending plants data:', {
       count: plantsWithStages.length,
@@ -87,21 +106,10 @@ app.get('/api/plants', async (req, res) => {
 
     res.json(plantsWithStages);
   } catch (error) {
-    console.error('Database error:', {
-      message: error.message,
-      code: error.code,
-      sqlMessage: error.sqlMessage,
-      sql: error.sql
-    });
-
+    console.error('Database error:', error);
     res.status(500).json({ 
       message: 'Error fetching plants', 
-      error: error.message,
-      details: process.env.NODE_ENV === 'development' ? {
-        sqlMessage: error.sqlMessage,
-        sql: error.sql,
-        code: error.code
-      } : undefined
+      error: error.message 
     });
   }
 });
