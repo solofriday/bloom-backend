@@ -75,7 +75,6 @@ app.get('/api/plants', async (req, res) => {
   try {
     console.log('Fetching plants with stages...');
     const [results] = await pool.execute('CALL GetPlantsWithStages()');
-    console.log('Raw SP results:', results[0]);
     
     const plants = results[0].map(plant => {
       try {
@@ -85,23 +84,32 @@ app.get('/api/plants', async (req, res) => {
           rawStages: plant.stages
         });
 
-        const stages = plant.stages ? JSON.parse(plant.stages) : [];
-        console.log('Parsed stages:', stages);
+        // Check if stages is already an array or needs parsing
+        const stages = Array.isArray(plant.stages) 
+          ? plant.stages 
+          : (typeof plant.stages === 'string' ? JSON.parse(plant.stages) : []);
+
+        // Parse sensitivities only if it's a string
+        const sensitivities = typeof plant.sensitivities === 'string'
+          ? JSON.parse(plant.sensitivities)
+          : (Array.isArray(plant.sensitivities) ? plant.sensitivities : []);
 
         return {
           ...plant,
-          sensitivities: JSON.parse(plant.sensitivities || '[]'),
+          sensitivities,
           growthStages: stages
             .filter(stage => stage && stage.image)
             .map(stage => ({
               ...stage,
+              id: stage.id.toString(), // Ensure id is a string
               image: stage.image.replace('bloom-bucket.bloom-bucket', 'bloom-bucket')
             }))
         };
       } catch (parseError) {
-        console.error('Error parsing plant data:', parseError, {
+        console.error('Error processing plant data:', parseError, {
           plantId: plant.id,
-          stages: plant.stages
+          stages: plant.stages,
+          sensitivities: plant.sensitivities
         });
         return {
           ...plant,
