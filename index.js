@@ -127,129 +127,46 @@ app.get('/api/plants', async (req, res) => {
   }
 });
 
-// Update the upload endpoint with better error handling
+// Simplify the upload endpoint
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
-    console.log('Upload request received:', {
-      file: req.file ? {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size
-      } : null,
-      body: req.body
-    });
-
     if (!req.file || !req.body.status || !req.body.plantId) {
       return res.status(400).json({ 
-        message: 'Missing required fields', 
-        received: { 
-          file: !!req.file, 
-          status: req.body.status,
-          plantId: req.body.plantId 
-        } 
+        message: 'Missing required fields'
       });
     }
 
-    // Verify plant exists first
-    const [plants] = await pool.execute(
-      'SELECT id FROM plants WHERE id = ?',
-      [req.body.plantId]
+    // Upload to S3
+    const fileKey = `plants/${req.body.plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+    
+    await s3Client.send(new PutObjectCommand({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      Key: fileKey,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+      ACL: 'public-read',
+    }));
+
+    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
+    const dateTaken = await getImageDate(req.file.buffer);
+
+    // Insert into database
+    const [result] = await pool.execute(
+      'INSERT INTO plant_stages (plant_id, status, date_taken, image_url) VALUES (?, ?, ?, ?)',
+      [req.body.plantId, req.body.status, dateTaken, imageUrl]
     );
 
-    if (!plants.length) {
-      return res.status(404).json({ message: 'Plant not found' });
-    }
-
-    try {
-      // Upload to S3
-      const fileKey = `plants/${req.body.plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
-      console.log('Uploading to S3:', {
-        bucket: process.env.DO_SPACES_BUCKET,
-        key: fileKey,
-        contentType: req.file.mimetype
-      });
-
-      await s3Client.send(new PutObjectCommand({
-        Bucket: process.env.DO_SPACES_BUCKET,
-        Key: fileKey,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-        ACL: 'public-read',
-      }));
-
-      const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
-      console.log('File uploaded, URL:', imageUrl);
-
-      // Get date from EXIF or use current date
-      const dateTaken = await getImageDate(req.file.buffer);
-      console.log('Using date:', dateTaken);
-
-      // Insert into database
-      const connection = await pool.getConnection();
-      try {
-        await connection.beginTransaction();
-        console.log('Starting database transaction');
-
-        const [result] = await connection.execute(
-          'INSERT INTO plant_stages (plant_id, status, date_taken, image_url) VALUES (?, ?, ?, ?)',
-          [req.body.plantId, req.body.status, dateTaken, imageUrl]
-        );
-
-        const [updatedPlant] = await connection.execute(`
-          SELECT p.*, 
-            JSON_ARRAYAGG(
-              JSON_OBJECT(
-                'id', ps.id,
-                'status', ps.status,
-                'date', DATE_FORMAT(ps.date_taken, '%Y-%m-%d'),
-                'image', ps.image_url
-              )
-            ) as stages
-          FROM plants p
-          LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-          WHERE p.id = ?
-          GROUP BY p.id
-        `, [req.body.plantId]);
-
-        await connection.commit();
-        console.log('Database transaction committed');
-
-        const plant = {
-          ...updatedPlant[0],
-          sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
-          growthStages: JSON.parse(updatedPlant[0].stages || '[]')
-        };
-
-        res.json({
-          message: 'Stage added successfully',
-          imageUrl,
-          stageId: result.insertId,
-          plant
-        });
-
-      } catch (dbError) {
-        await connection.rollback();
-        console.error('Database error:', dbError);
-        throw new Error(`Database error: ${dbError.message}`);
-      } finally {
-        connection.release();
-      }
-
-    } catch (uploadError) {
-      console.error('S3 upload error:', uploadError);
-      throw new Error(`S3 upload failed: ${uploadError.message}`);
-    }
+    res.json({
+      success: true,
+      stageId: result.insertId,
+      imageUrl
+    });
 
   } catch (error) {
-    console.error('Upload error:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    });
+    console.error('Upload error:', error);
     res.status(500).json({ 
       message: 'Error uploading image', 
-      error: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message
     });
   }
 });
