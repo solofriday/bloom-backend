@@ -76,11 +76,29 @@ app.get('/api/plants', async (req, res) => {
     const [results] = await pool.execute('CALL GetPlantsWithStages()');
     
     // SP returns results as first element of array
-    const plants = results[0].map(plant => ({
-      ...plant,
-      sensitivities: JSON.parse(plant.sensitivities || '[]'),
-      growthStages: JSON.parse(plant.stages || '[]').filter(stage => stage !== null)
-    }));
+    const plants = results[0].map(plant => {
+      try {
+        return {
+          ...plant,
+          sensitivities: JSON.parse(plant.sensitivities || '[]'),
+          growthStages: JSON.parse(plant.stages || '[]')
+            .filter(stage => stage !== null)
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        };
+      } catch (parseError) {
+        console.error('Error parsing plant data:', parseError, plant);
+        return {
+          ...plant,
+          sensitivities: [],
+          growthStages: []
+        };
+      }
+    });
+
+    console.log('Sending plants:', plants.map(p => ({
+      id: p.id,
+      stagesCount: p.growthStages.length
+    })));
 
     res.json(plants);
   } catch (error) {
