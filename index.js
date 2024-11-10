@@ -73,30 +73,35 @@ async function getImageDate(buffer) {
 // Update the plants endpoint
 app.get('/api/plants', async (req, res) => {
   try {
+    console.log('Fetching plants with stages...');
     const [results] = await pool.execute('CALL GetPlantsWithStages()');
+    console.log('Raw SP results:', results[0]);
     
-    // SP returns results as first element of array
     const plants = results[0].map(plant => {
       try {
         console.log('Processing plant:', {
           id: plant.id,
-          rawStages: plant.stages,
-          rawSensitivities: plant.sensitivities
+          name: plant.name,
+          rawStages: plant.stages
         });
 
         const stages = plant.stages ? JSON.parse(plant.stages) : [];
-        const sensitivities = plant.sensitivities ? JSON.parse(plant.sensitivities) : [];
+        console.log('Parsed stages:', stages);
 
         return {
           ...plant,
-          sensitivities,
-          growthStages: stages.filter(stage => stage && stage.image)
+          sensitivities: JSON.parse(plant.sensitivities || '[]'),
+          growthStages: stages
+            .filter(stage => stage && stage.image)
+            .map(stage => ({
+              ...stage,
+              image: stage.image.replace('bloom-bucket.bloom-bucket', 'bloom-bucket')
+            }))
         };
       } catch (parseError) {
         console.error('Error parsing plant data:', parseError, {
           plantId: plant.id,
-          stages: plant.stages,
-          sensitivities: plant.sensitivities
+          stages: plant.stages
         });
         return {
           ...plant,
@@ -106,20 +111,16 @@ app.get('/api/plants', async (req, res) => {
       }
     });
 
-    console.log('Processed plants:', plants.map(p => ({
+    console.log('Sending processed plants:', plants.map(p => ({
       id: p.id,
       name: p.name,
-      stagesCount: p.growthStages.length,
+      stageCount: p.growthStages.length,
       sampleStage: p.growthStages[0]
     })));
 
     res.json(plants);
   } catch (error) {
-    console.error('Database error:', {
-      message: error.message,
-      sql: error.sql,
-      sqlMessage: error.sqlMessage
-    });
+    console.error('Database error:', error);
     res.status(500).json({ 
       message: 'Error fetching plants', 
       error: error.message 
