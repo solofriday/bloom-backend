@@ -70,7 +70,7 @@ async function getImageDate(buffer) {
   }
 }
 
-// Update the plants endpoint to use SP
+// Update the plants endpoint
 app.get('/api/plants', async (req, res) => {
   try {
     const [results] = await pool.execute('CALL GetPlantsWithStages()');
@@ -78,22 +78,19 @@ app.get('/api/plants', async (req, res) => {
     // SP returns results as first element of array
     const plants = results[0].map(plant => {
       try {
-        // Check if stages is already an object/array
-        const stages = typeof plant.stages === 'string' 
-          ? JSON.parse(plant.stages) 
-          : (plant.stages || []);
+        console.log('Processing plant:', {
+          id: plant.id,
+          rawStages: plant.stages,
+          rawSensitivities: plant.sensitivities
+        });
 
-        // Check if sensitivities is already an object/array
-        const sensitivities = typeof plant.sensitivities === 'string'
-          ? JSON.parse(plant.sensitivities)
-          : (plant.sensitivities || []);
+        const stages = plant.stages ? JSON.parse(plant.stages) : [];
+        const sensitivities = plant.sensitivities ? JSON.parse(plant.sensitivities) : [];
 
         return {
           ...plant,
           sensitivities,
-          growthStages: stages
-            .filter(stage => stage !== null)
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          growthStages: stages.filter(stage => stage && stage.image)
         };
       } catch (parseError) {
         console.error('Error parsing plant data:', parseError, {
@@ -109,10 +106,11 @@ app.get('/api/plants', async (req, res) => {
       }
     });
 
-    console.log('Sending plants:', plants.map(p => ({
+    console.log('Processed plants:', plants.map(p => ({
       id: p.id,
       name: p.name,
-      stagesCount: p.growthStages.length
+      stagesCount: p.growthStages.length,
+      sampleStage: p.growthStages[0]
     })));
 
     res.json(plants);
