@@ -77,28 +77,41 @@ app.get('/api/plants', async (req, res) => {
       SELECT 
         p.*,
         JSON_ARRAYAGG(
-          JSON_OBJECT(
-            'id', ps.id,
-            'status', ps.status,
-            'date', DATE_FORMAT(COALESCE(ps.date_taken, ps.date), '%Y-%m-%d'),
-            'image', ps.image_url
+          IF(ps.id IS NOT NULL,
+            JSON_OBJECT(
+              'id', ps.id,
+              'status', ps.status,
+              'date', DATE_FORMAT(COALESCE(ps.date_taken, ps.date), '%Y-%m-%d'),
+              'image', ps.image_url
+            ),
+            NULL
           )
-          ORDER BY COALESCE(ps.date_taken, ps.date) DESC
         ) as stages
       FROM plants p
-      LEFT JOIN plant_stages ps ON p.id = p.id
+      LEFT JOIN plant_stages ps ON p.id = ps.plant_id
       GROUP BY p.id, p.name, p.location, p.sensitivities
     `);
 
     const plantsWithStages = results.map(plant => ({
       ...plant,
       sensitivities: JSON.parse(plant.sensitivities || '[]'),
-      growthStages: JSON.parse(plant.stages || '[]').filter(stage => stage && stage.id)
+      growthStages: JSON.parse(plant.stages || '[]')
+        .filter(stage => stage !== null)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     }));
+
+    console.log('Processed plants data:', {
+      count: plantsWithStages.length,
+      sample: plantsWithStages[0]
+    });
 
     res.json(plantsWithStages);
   } catch (error) {
-    console.error('Database error:', error);
+    console.error('Database error:', {
+      message: error.message,
+      sql: error.sql,
+      sqlMessage: error.sqlMessage
+    });
     res.status(500).json({ 
       message: 'Error fetching plants', 
       error: error.message 
