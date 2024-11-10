@@ -70,42 +70,19 @@ async function getImageDate(buffer) {
   }
 }
 
-// Optimized plants endpoint using stored procedure
+// Update the plants endpoint to use SP
 app.get('/api/plants', async (req, res) => {
   try {
-    const [results] = await pool.execute(`
-      SELECT 
-        p.*,
-        JSON_ARRAYAGG(
-          IF(ps.id IS NOT NULL,
-            JSON_OBJECT(
-              'id', ps.id,
-              'status', ps.status,
-              'date', DATE_FORMAT(COALESCE(ps.date_taken, ps.date), '%Y-%m-%d'),
-              'image', ps.image_url
-            ),
-            NULL
-          )
-        ) as stages
-      FROM plants p
-      LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-      GROUP BY p.id, p.name, p.location, p.sensitivities
-    `);
-
-    const plantsWithStages = results.map(plant => ({
+    const [results] = await pool.execute('CALL GetPlantsWithStages()');
+    
+    // SP returns results as first element of array
+    const plants = results[0].map(plant => ({
       ...plant,
       sensitivities: JSON.parse(plant.sensitivities || '[]'),
-      growthStages: JSON.parse(plant.stages || '[]')
-        .filter(stage => stage !== null)
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      growthStages: JSON.parse(plant.stages || '[]').filter(stage => stage !== null)
     }));
 
-    console.log('Processed plants data:', {
-      count: plantsWithStages.length,
-      sample: plantsWithStages[0]
-    });
-
-    res.json(plantsWithStages);
+    res.json(plants);
   } catch (error) {
     console.error('Database error:', {
       message: error.message,
@@ -119,27 +96,14 @@ app.get('/api/plants', async (req, res) => {
   }
 });
 
-// Optimized upload endpoint
+// Update the upload endpoint to use SP
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
     if (!req.file || !req.body.status || !req.body.plantId) {
       return res.status(400).json({ 
         message: 'Missing required fields', 
-        received: { 
-          file: !!req.file, 
-          ...req.body 
-        } 
+        received: { file: !!req.file, ...req.body } 
       });
-    }
-
-    // Verify plant exists
-    const [plants] = await pool.execute(
-      'SELECT id FROM plants WHERE id = ?',
-      [req.body.plantId]
-    );
-
-    if (!plants.length) {
-      return res.status(404).json({ message: 'Plant not found' });
     }
 
     // Upload to S3
@@ -155,51 +119,48 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
     const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
     const dateTaken = await getImageDate(req.file.buffer);
 
-    // Insert new stage and get updated plant data in a transaction
+    // Use SP to add stage and get updated plant data
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
 
-      const [result] = await connection.execute(
-        'INSERT INTO plant_stages (plant_id, status, date_taken, image_url) VALUES (?, ?, ?, ?)',
+      const [results] = await connection.execute(
+        'CALL AddPlantStage(?, ?, ?, ?, @stage_id)',
         [req.body.plantId, req.body.status, dateTaken, imageUrl]
       );
 
-      const [updatedPlant] = await connection.execute(`
-        SELECT p.*, 
-          JSON_ARRAYAGG(
-            JSON_OBJECT(
-              'id', ps.id,
-              'status', ps.status,
-              'date', DATE_FORMAT(ps.date_taken, '%Y-%m-%d'),
-              'image', ps.image_url
-            )
-            ORDER BY ps.date_taken DESC
-          ) as stages
-        FROM plants p
-        LEFT JOIN plant_stages ps ON p.id = ps.plant_id
-        WHERE p.id = ?
-        GROUP BY p.id
-      `, [req.body.plantId]);
+      // Get the stage ID
+      const [[{ '@stage_id': stageId }]] = await connection.execute('SELECT @stage_id');
 
       await connection.commit();
 
+      // SP returns updated plant data in first result set
       const plant = {
-        ...updatedPlant[0],
-        sensitivities: JSON.parse(updatedPlant[0].sensitivities || '[]'),
-        growthStages: JSON.parse(updatedPlant[0].stages || '[]').filter(stage => stage.id !== null)
+        ...results[0][0],
+        sensitivities: JSON.parse(results[0][0].sensitivities || '[]'),
+        growthStages: JSON.parse(results[0][0].stages || '[]')
       };
 
-      res.json({ message: 'Stage added successfully', imageUrl, stageId: result.insertId, plant });
+      res.json({
+        message: 'Stage added successfully',
+        imageUrl,
+        stageId,
+        plant
+      });
+
     } catch (error) {
       await connection.rollback();
       throw error;
     } finally {
       connection.release();
     }
+
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ message: 'Error uploading image', error: error.message });
+    res.status(500).json({ 
+      message: 'Error uploading image', 
+      error: error.message 
+    });
   }
 });
 
