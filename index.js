@@ -73,36 +73,28 @@ async function getImageDate(buffer) {
 // Optimized plants endpoint using stored procedure
 app.get('/api/plants', async (req, res) => {
   try {
-    const [results] = await pool.execute('CALL GetPlantsWithStages()');
-    const plantsWithStages = results[0].map(plant => {
-      let stages = [];
-      let sensitivities = [];
-      
-      try {
-        // Check if stages is a string before parsing
-        stages = typeof plant.stages === 'string' 
-          ? JSON.parse(plant.stages) 
-          : (plant.stages || []);
-        
-        // Check if sensitivities is a string before parsing
-        sensitivities = typeof plant.sensitivities === 'string' 
-          ? JSON.parse(plant.sensitivities) 
-          : (plant.sensitivities || []);
-      } catch (parseError) {
-        console.error('JSON parsing error:', parseError);
-      }
+    const [results] = await pool.execute(`
+      SELECT 
+        p.*,
+        JSON_ARRAYAGG(
+          JSON_OBJECT(
+            'id', ps.id,
+            'status', ps.status,
+            'date', DATE_FORMAT(COALESCE(ps.date_taken, ps.date), '%Y-%m-%d'),
+            'image', ps.image_url
+          )
+          ORDER BY COALESCE(ps.date_taken, ps.date) DESC
+        ) as stages
+      FROM plants p
+      LEFT JOIN plant_stages ps ON p.id = p.id
+      GROUP BY p.id, p.name, p.location, p.sensitivities
+    `);
 
-      return {
-        ...plant,
-        sensitivities,
-        growthStages: stages.filter(stage => stage && stage.id !== null)
-      };
-    });
-
-    console.log('Sending plants data:', {
-      count: plantsWithStages.length,
-      firstPlant: plantsWithStages[0]
-    });
+    const plantsWithStages = results.map(plant => ({
+      ...plant,
+      sensitivities: JSON.parse(plant.sensitivities || '[]'),
+      growthStages: JSON.parse(plant.stages || '[]').filter(stage => stage && stage.id)
+    }));
 
     res.json(plantsWithStages);
   } catch (error) {
