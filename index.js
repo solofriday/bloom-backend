@@ -78,12 +78,13 @@ app.get('/api/plants', async (req, res) => {
   const status = req.query.status || null;
 
   try {
-    console.log('Fetching plants with stages and locations...');
+    console.log('Fetching plants with stages, locations, and photos...');
     const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?)', [userId, status]);
     
     const plants = results[0].map(plant => {
       // Parse notes if they exist and are in JSON format
       const notes = plant.notes ? JSON.parse(plant.notes) : [];
+      const photos = plant.photos ? JSON.parse(plant.photos) : [];
 
       return {
         plant_obj_id: plant.plant_obj_id,
@@ -105,6 +106,7 @@ app.get('/api/plants', async (req, res) => {
           name: plant.location_name,
           sun_exposure: plant.sun_exposure
         },
+        photos, // Include parsed photos if available
         notes, // Include parsed notes if available
         date_updated: plant.date_updated,
         date_planted: plant.date_planted,
@@ -149,13 +151,13 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
 
     // Insert into database
     const [result] = await pool.execute(
-      'INSERT INTO plant_stages (plant_id, status, date_taken, image_url) VALUES (?, ?, ?, ?)',
-      [req.body.plantId, req.body.status, dateTaken, imageUrl]
+      'INSERT INTO photo (storage_photo_id, plant_obj_id, date_taken, date_uploaded) VALUES (?, ?, ?, ?)',
+      [fileKey, req.body.plantId, dateTaken, new Date()]
     );
 
     res.json({
       success: true,
-      stageId: result.insertId,
+      photoId: result.insertId,
       imageUrl
     });
 
