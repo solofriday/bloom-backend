@@ -1,3 +1,5 @@
+// Updated bloom-backend index.js
+
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -70,62 +72,48 @@ async function getImageDate(buffer) {
   }
 }
 
-// Update the plants endpoint
+// Updated API endpoint to get plants with stages and locations
 app.get('/api/plants', async (req, res) => {
+  const userId = req.query.userId || null;
+  const status = req.query.status || null;
+
   try {
-    console.log('Fetching plants with stages...');
-    const [results] = await pool.execute('CALL GetPlantsWithStages()');
+    console.log('Fetching plants with stages and locations...');
+    const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?)', [userId, status]);
     
     const plants = results[0].map(plant => {
-      try {
-        console.log('Processing plant:', {
-          id: plant.id,
-          name: plant.name,
-          rawStages: plant.stages
-        });
+      // Parse notes if they exist and are in JSON format
+      const notes = plant.notes ? JSON.parse(plant.notes) : [];
 
-        // Check if stages is already an array or needs parsing
-        const stages = Array.isArray(plant.stages) 
-          ? plant.stages 
-          : (typeof plant.stages === 'string' ? JSON.parse(plant.stages) : []);
-
-        // Parse sensitivities only if it's a string
-        const sensitivities = typeof plant.sensitivities === 'string'
-          ? JSON.parse(plant.sensitivities)
-          : (Array.isArray(plant.sensitivities) ? plant.sensitivities : []);
-
-        return {
-          ...plant,
-          sensitivities,
-          growthStages: stages
-            .filter(stage => stage && stage.image)
-            .map(stage => ({
-              ...stage,
-              id: stage.id.toString(), // Ensure id is a string
-              image: stage.image.replace('bloom-bucket.bloom-bucket', 'bloom-bucket')
-            }))
-        };
-      } catch (parseError) {
-        console.error('Error processing plant data:', parseError, {
-          plantId: plant.id,
-          stages: plant.stages,
-          sensitivities: plant.sensitivities
-        });
-        return {
-          ...plant,
-          sensitivities: [],
-          growthStages: []
-        };
-      }
+      return {
+        plant_obj_id: plant.plant_obj_id,
+        user_id: plant.user_id,
+        plant_name: plant.plant_name,
+        variety: {
+          id: plant.variety_id,
+          name: plant.variety_name
+        },
+        stage: {
+          id: plant.stage_id,
+          name: plant.stage_name,
+          description: plant.stage_description,
+          cold_tolerance: plant.cold_tolerance,
+          heat_tolerance: plant.heat_tolerance,
+        },
+        location: {
+          id: plant.location_id,
+          name: plant.location_name,
+          sun_exposure: plant.sun_exposure
+        },
+        notes, // Include parsed notes if available
+        date_updated: plant.date_updated,
+        date_planted: plant.date_planted,
+        is_transplant: plant.is_transplant,
+        status: plant.status
+      };
     });
 
-    console.log('Sending processed plants:', plants.map(p => ({
-      id: p.id,
-      name: p.name,
-      stageCount: p.growthStages.length,
-      sampleStage: p.growthStages[0]
-    })));
-
+    console.log('Sending structured plants data:', plants);
     res.json(plants);
   } catch (error) {
     console.error('Database error:', error);
@@ -136,7 +124,7 @@ app.get('/api/plants', async (req, res) => {
   }
 });
 
-// Simplify the upload endpoint
+// Upload endpoint for plant stages
 app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
   try {
     if (!req.file || !req.body.status || !req.body.plantId) {
