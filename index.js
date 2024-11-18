@@ -81,38 +81,52 @@ app.get('/api/plants', async (req, res) => {
     console.log('Fetching plants with stages, locations, and photos...');
     const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?)', [userId, status]);
     
+    // Important: The stored procedure returns results[0] since it's the first result set
     const plants = results[0].map(plant => {
-      // Parse notes if they exist and are in JSON format
-      const notes = plant.notes ? JSON.parse(plant.notes) : [];
-      const photos = plant.photos ? JSON.parse(plant.photos) : [];
+      try {
+        // Parse JSON strings only if they're not already objects
+        const variety = typeof plant.variety === 'string' ? JSON.parse(plant.variety) : plant.variety;
+        const stage = typeof plant.stage === 'string' ? JSON.parse(plant.stage) : plant.stage;
+        const location = typeof plant.location === 'string' ? JSON.parse(plant.location) : plant.location;
+        const photos = typeof plant.photos === 'string' ? JSON.parse(plant.photos) : (plant.photos || []);
+        const notes = typeof plant.notes === 'string' ? JSON.parse(plant.notes) : (plant.notes || []);
 
-      return {
-        plant_obj_id: plant.plant_obj_id,
-        user_id: plant.user_id,
-        plant_name: plant.plant_name,
-        variety: {
-          id: plant.variety_id,
-          name: plant.variety_name
-        },
-        stage: {
-          id: plant.stage_id,
-          name: plant.stage_name,
-          description: plant.stage_description,
-          cold_tolerance: plant.cold_tolerance,
-          heat_tolerance: plant.heat_tolerance,
-        },
-        location: {
-          id: plant.location_id,
-          name: plant.location_name,
-          sun_exposure: plant.sun_exposure
-        },
-        photos, // Include parsed photos if available
-        notes, // Include parsed notes if available
-        date_updated: plant.date_updated,
-        date_planted: plant.date_planted,
-        is_transplant: plant.is_transplant,
-        status: plant.status
-      };
+        return {
+          plant_obj_id: plant.plant_obj_id,
+          user_id: plant.user_id,
+          plant_name: plant.plant_name,
+          variety,
+          stage,
+          location,
+          photos,
+          notes,
+          date_updated: plant.date_updated,
+          date_planted: plant.date_planted,
+          is_transplant: plant.is_transplant,
+          status: plant.status,
+          current_temp: plant.current_temp
+        };
+      } catch (parseError) {
+        console.error('Error parsing plant data:', parseError, {
+          plantId: plant.plant_obj_id,
+          rawData: plant
+        });
+        return {
+          plant_obj_id: plant.plant_obj_id,
+          user_id: plant.user_id,
+          plant_name: plant.plant_name,
+          variety: {},
+          stage: {},
+          location: {},
+          photos: [],
+          notes: [],
+          date_updated: plant.date_updated,
+          date_planted: plant.date_planted,
+          is_transplant: plant.is_transplant,
+          status: plant.status,
+          current_temp: plant.current_temp
+        };
+      }
     });
 
     console.log('Sending structured plants data:', plants);
