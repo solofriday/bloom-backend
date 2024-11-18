@@ -81,7 +81,6 @@ app.get('/api/plants', async (req, res) => {
     console.log('Fetching plants with stages, locations, and photos...');
     const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?)', [userId, status]);
     
-    // Important: The stored procedure returns results[0] since it's the first result set
     const plants = results[0].map(plant => {
       try {
         // Parse JSON strings only if they're not already objects
@@ -90,6 +89,10 @@ app.get('/api/plants', async (req, res) => {
         const location = typeof plant.location === 'string' ? JSON.parse(plant.location) : plant.location;
         const photos = typeof plant.photos === 'string' ? JSON.parse(plant.photos) : (plant.photos || []);
         const notes = typeof plant.notes === 'string' ? JSON.parse(plant.notes) : (plant.notes || []);
+        const warning = typeof plant.warning === 'string' ? JSON.parse(plant.warning) : (plant.warning || {
+          cold_tolerance: null,
+          heat_tolerance: null
+        });
 
         return {
           plant_obj_id: plant.plant_obj_id,
@@ -100,6 +103,7 @@ app.get('/api/plants', async (req, res) => {
           location,
           photos,
           notes,
+          warning,
           date_updated: plant.date_updated,
           date_planted: plant.date_planted,
           is_transplant: plant.is_transplant,
@@ -120,11 +124,15 @@ app.get('/api/plants', async (req, res) => {
           location: {},
           photos: [],
           notes: [],
+          warning: {
+            cold_tolerance: null,
+            heat_tolerance: null
+          },
           date_updated: plant.date_updated,
           date_planted: plant.date_planted,
           is_transplant: plant.is_transplant,
           status: plant.status,
-          current_temp: plant.current_temp
+          current_temp: plant.current_temp,
         };
       }
     });
