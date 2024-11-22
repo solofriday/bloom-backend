@@ -84,6 +84,7 @@ app.get('/api/plants', async (req, res) => {
     const plants = results[0].map(plant => {
       try {
         // Parse JSON strings only if they're not already objects
+        const plant_data = typeof plant.plant === 'string' ? JSON.parse(plant.plant) : plant.plant;
         const variety = typeof plant.variety === 'string' ? JSON.parse(plant.variety) : plant.variety;
         const stage = typeof plant.stage === 'string' ? JSON.parse(plant.stage) : plant.stage;
         const location = typeof plant.location === 'string' ? JSON.parse(plant.location) : plant.location;
@@ -97,7 +98,7 @@ app.get('/api/plants', async (req, res) => {
         return {
           plant_obj_id: plant.plant_obj_id,
           user_id: plant.user_id,
-          plant_name: plant.plant_name,
+          plant: plant_data,
           variety,
           stage,
           location,
@@ -118,7 +119,7 @@ app.get('/api/plants', async (req, res) => {
         return {
           plant_obj_id: plant.plant_obj_id,
           user_id: plant.user_id,
-          plant_name: plant.plant_name,
+          plant: {},
           variety: {},
           stage: {},
           location: {},
