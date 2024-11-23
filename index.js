@@ -193,5 +193,28 @@ app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) =>
   }
 });
 
+// Add this new endpoint after the existing endpoints
+app.get('/api/stages', async (req, res) => {
+  try {
+    console.log('Fetching all stages...');
+    const [results] = await pool.execute('CALL GetAllStages()');
+    
+    // The first element contains our result set
+    const stages = results[0].map(stage => ({
+      id: stage.stage_id,
+      name: stage.name,
+      description: stage.description
+    }));
+
+    res.json(stages);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ 
+      message: 'Error fetching stages', 
+      error: error.message 
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
