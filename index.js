@@ -201,7 +201,7 @@ app.get('/api/stages', async (req, res) => {
     
     // The first element contains our result set
     const stages = results[0].map(stage => ({
-      stage_id: stage.stage_id,
+      id: stage.id,
       name: stage.name,
       description: stage.description
     }));
