@@ -219,7 +219,7 @@ app.get('/api/stages', async (req, res) => {
 // Add this new endpoint for getting varieties by plant
 app.get('/api/varieties', async (req, res) => {
   const plantId = req.query.plantId;
-  const search = req.query.search || null;
+  const search = req.query.search === undefined ? null : req.query.search;
 
   try {
     console.log('Fetching varieties for plant:', plantId, 'with search:', search);
@@ -258,6 +258,30 @@ app.get('/api/all-plants', async (req, res) => {
     console.error('Database error:', error);
     res.status(500).json({ 
       message: 'Error fetching plants', 
+      error: error.message 
+    });
+  }
+});
+
+// Add this new endpoint for getting locations
+app.get('/api/locations', async (req, res) => {
+  const search = req.query.search === undefined ? null : req.query.search;
+
+  try {
+    console.log('Fetching locations with search:', search);
+    const [results] = await pool.execute('CALL GetLocationsBySearch(?)', [search]);
+    
+    // The first element contains our result set
+    const locations = results[0].map(location => ({
+      id: location.id,
+      name: location.name
+    }));
+
+    res.json(locations);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ 
+      message: 'Error fetching locations', 
       error: error.message 
     });
   }
