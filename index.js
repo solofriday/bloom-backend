@@ -291,56 +291,48 @@ app.get('/api/locations', async (req, res) => {
 app.post('/api/plants/update', async (req, res) => {
   try {
     const {
-      plant_obj_id,
-      user_id,
-      plant,
-      variety,
-      location,
-      current_stage,
-      date_planted,
-      is_transplant,
-      status,
-      active
+      plantObjId,
+      userId,
+      newPlantId,
+      newVarietyId,
+      newLocationId,
+      newStageId,
+      newDatePlanted,
+      newIsTransplant,
+      newStatus
     } = req.body;
 
     console.log('Updating plant object:', {
-      plant_obj_id,
-      user_id,
-      plant_id: plant?.id,
-      variety_id: variety?.id,
-      location_id: location?.id,
-      current_stage,
-      date_planted,
-      is_transplant,
-      status: active ? 1 : 0
+      plantObjId,
+      userId,
+      newPlantId,
+      newVarietyId,
+      newLocationId,
+      newStageId,
+      newDatePlanted,
+      newIsTransplant,
+      newStatus
     });
 
     const [result] = await pool.execute(
       'CALL UpdatePlantObj(?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
-        plant_obj_id,
-        user_id,
-        plant?.id,
-        variety?.id,
-        location?.id,
-        current_stage,
-        date_planted || null,
-        is_transplant || false,
-        active ? 1 : 0
+        plantObjId,
+        userId,
+        newPlantId,
+        newVarietyId,
+        newLocationId,
+        newStageId,
+        newDatePlanted,
+        newIsTransplant,
+        newStatus
       ]
     );
-
-    // Check if the update was successful
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        message: 'Plant object not found or no changes made'
-      });
-    }
 
     res.json({
       success: true,
       message: 'Plant object updated successfully',
-      plant_obj_id
+      plantObjId
     });
 
   } catch (error) {
