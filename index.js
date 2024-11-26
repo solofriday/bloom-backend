@@ -216,5 +216,52 @@ app.get('/api/stages', async (req, res) => {
   }
 });
 
+// Add this new endpoint for getting varieties by plant
+app.get('/api/varieties', async (req, res) => {
+  const plantId = req.query.plantId;
+  const search = req.query.search || null;
+
+  try {
+    console.log('Fetching varieties for plant:', plantId, 'with search:', search);
+    const [results] = await pool.execute('CALL GetVarietiesByPlant(?, ?)', [plantId, search]);
+    
+    // The first element contains our result set
+    const varieties = results[0].map(variety => ({
+      id: variety.id,
+      name: variety.name
+    }));
+
+    res.json(varieties);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ 
+      message: 'Error fetching varieties', 
+      error: error.message 
+    });
+  }
+});
+
+// Review of existing GetAllPlants endpoint
+app.get('/api/all-plants', async (req, res) => {
+  try {
+    console.log('Fetching all plants...');
+    const [results] = await pool.execute('CALL GetAllPlants()');
+    
+    // The first element contains our result set
+    const plants = results[0].map(plant => ({
+      id: plant.id,
+      name: plant.name
+    }));
+
+    res.json(plants);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ 
+      message: 'Error fetching plants', 
+      error: error.message 
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
