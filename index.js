@@ -302,7 +302,22 @@ app.post('/api/plants/update', async (req, res) => {
       newStatus
     } = req.body;
 
-    console.log('Updating plant object:', {
+    // Detailed logging of received data
+    console.log('Raw request body:', req.body);
+    console.log('Parsed values:', {
+      plantObjId: typeof plantObjId + ' -> ' + plantObjId,
+      userId: typeof userId + ' -> ' + userId,
+      newPlantId: typeof newPlantId + ' -> ' + newPlantId,
+      newVarietyId: typeof newVarietyId + ' -> ' + newVarietyId,
+      newLocationId: typeof newLocationId + ' -> ' + newLocationId,
+      newStageId: typeof newStageId + ' -> ' + newStageId,
+      newDatePlanted: typeof newDatePlanted + ' -> ' + newDatePlanted,
+      newIsTransplant: typeof newIsTransplant + ' -> ' + newIsTransplant,
+      newStatus: typeof newStatus + ' -> ' + newStatus
+    });
+
+    // Log the exact SQL parameters being passed
+    console.log('SQL parameters:', [
       plantObjId,
       userId,
       newPlantId,
@@ -312,7 +327,7 @@ app.post('/api/plants/update', async (req, res) => {
       newDatePlanted,
       newIsTransplant,
       newStatus
-    });
+    ]);
 
     const [result] = await pool.execute(
       'CALL UpdatePlantObj(?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -329,6 +344,8 @@ app.post('/api/plants/update', async (req, res) => {
       ]
     );
 
+    console.log('SQL execution result:', result);
+
     res.json({
       success: true,
       message: 'Plant object updated successfully',
@@ -336,10 +353,20 @@ app.post('/api/plants/update', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error updating plant object:', error);
+    console.error('Detailed error:', {
+      message: error.message,
+      code: error.code,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
     res.status(500).json({
       message: 'Error updating plant object',
-      error: error.message
+      error: error.message,
+      details: {
+        code: error.code,
+        sqlState: error.sqlState,
+        sqlMessage: error.sqlMessage
+      }
     });
   }
 });
