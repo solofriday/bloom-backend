@@ -551,7 +551,7 @@ app.delete('/api/notes/:userId/:plantObjId/:noteId', async (req, res) => {
   }
 });
 
-// Add this endpoint to handle photo fetching
+// Update endpoint for getting photos for a specific plant
 app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
   const { userId, plantObjId } = req.params;
 
@@ -564,21 +564,25 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
       });
     }
 
+    console.log('Fetching photos for:', { userId, plantObjId });
+
     // Call the stored procedure
     const [rows] = await pool.query(
-      'CALL getPhotos(?, ?)',
+      'CALL GetPhotos(?, ?)',
       [parseInt(userId), parseInt(plantObjId)]
     );
 
     // The stored procedure returns an array in the first element
     const photos = rows[0];
+    console.log('Retrieved photos:', photos);
 
     // Transform the stage JSON string to object if needed
     const transformedPhotos = photos.map(photo => ({
       ...photo,
-      stage: typeof photo.stage === 'string' ? JSON.parse(photo.stage) : photo.stage
+      stage: photo.stage ? (typeof photo.stage === 'string' ? JSON.parse(photo.stage) : photo.stage) : null
     }));
 
+    console.log('Transformed photos:', transformedPhotos);
     res.json(transformedPhotos);
 
   } catch (error) {
@@ -604,8 +608,8 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       });
     }
 
-    // Upload to S3
-    const fileKey = `plants/${plantObjId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+    // Update the file path to include userId
+    const fileKey = `plants/${userId}/${plantObjId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
     
     await s3Client.send(new PutObjectCommand({
       Bucket: process.env.DO_SPACES_BUCKET,
