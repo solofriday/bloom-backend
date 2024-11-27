@@ -293,7 +293,6 @@ app.post('/api/plants/update', async (req, res) => {
     const {
       plantObjId,
       userId,
-      newPlantId,
       newVarietyId,
       newLocationId,
       newStageId,
@@ -307,7 +306,6 @@ app.post('/api/plants/update', async (req, res) => {
     console.log('Parsed values:', {
       plantObjId: typeof plantObjId + ' -> ' + plantObjId,
       userId: typeof userId + ' -> ' + userId,
-      newPlantId: typeof newPlantId + ' -> ' + newPlantId,
       newVarietyId: typeof newVarietyId + ' -> ' + newVarietyId,
       newLocationId: typeof newLocationId + ' -> ' + newLocationId,
       newStageId: typeof newStageId + ' -> ' + newStageId,
@@ -316,25 +314,11 @@ app.post('/api/plants/update', async (req, res) => {
       newStatus: typeof newStatus + ' -> ' + newStatus
     });
 
-    // Log the exact SQL parameters being passed
-    console.log('SQL parameters:', [
-      plantObjId,
-      userId,
-      newPlantId,
-      newVarietyId,
-      newLocationId,
-      newStageId,
-      newDatePlanted,
-      newIsTransplant,
-      newStatus
-    ]);
-
     const [result] = await pool.execute(
-      'CALL UpdatePlantObj(?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'CALL UpdatePlantObj(?, ?, ?, ?, ?, ?, ?, ?)',
       [
         plantObjId,
         userId,
-        newPlantId,
         newVarietyId,
         newLocationId,
         newStageId,
