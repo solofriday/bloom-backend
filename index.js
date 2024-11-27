@@ -644,17 +644,19 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
     const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
     const dateTaken = await getImageDate(req.file.buffer);
 
-    // Add this logging right before the AddPhoto call
+    // Parse stageId as integer if it exists
+    const parsedStageId = stageId ? parseInt(stageId) : null;
+
     console.log('Calling AddPhoto with params:', {
       userId: parseInt(userId),
       plantObjId: parseInt(plantObjId),
       imageUrl,
       dateTaken,
-      stageId: stageId ? parseInt(stageId) : null,
+      stageId: parsedStageId,
       rawStageId: stageId
     });
 
-    // Call AddPhoto with all 5 required parameters
+    // Call AddPhoto stored procedure with all parameters
     const [result] = await pool.execute(
       'CALL AddPhoto(?, ?, ?, ?, ?)',
       [
@@ -662,29 +664,34 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
         parseInt(plantObjId),
         imageUrl,
         dateTaken,
-        stageId ? parseInt(stageId) : null
+        parsedStageId  // Make sure this is properly passed to the stored procedure
       ]
     );
 
-    // Log the result from the stored procedure
-    console.log('AddPhoto SP result:', result);
+    // Get the stage information if stageId was provided
+    let stageInfo = null;
+    if (parsedStageId) {
+      const [stageResult] = await pool.execute(
+        'SELECT id, name FROM stages WHERE id = ?',
+        [parsedStageId]
+      );
+      if (stageResult.length > 0) {
+        stageInfo = {
+          id: stageResult[0].id,
+          name: stageResult[0].name
+        };
+      }
+    }
 
-    // The SP returns the new photo details in the first row
-    const newPhoto = result[0][0];
-    console.log('New photo details:', newPhoto);
-
-    // Format the response to match what the frontend expects
+    // Format the response with stage information
     const response = {
       success: true,
       photo: {
-        id: newPhoto.id || newPhoto.photo_id, // Handle both possible field names
+        id: result[0][0].id || result[0][0].photo_id,
         url: imageUrl,
         date_taken: dateTaken,
         date_uploaded: new Date().toISOString(),
-        stage: stageId ? {
-          id: parseInt(stageId),
-          name: newPhoto.stage_name || result[0][0].stage_name || 'Unknown Stage'
-        } : null
+        stage: stageInfo
       }
     };
 
