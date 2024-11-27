@@ -355,5 +355,26 @@ app.post('/api/plants/update', async (req, res) => {
   }
 });
 
+// Add endpoint for getting notes for a specific plant
+app.get('/api/notes/:userId/:plantObjId', async (req, res) => {
+  try {
+    const { userId, plantObjId } = req.params;
+    console.log('Fetching notes for plant:', plantObjId, 'user:', userId);
+    
+    const [results] = await pool.execute('CALL GetAllNotes(?, ?)', [userId, plantObjId]);
+    
+    // The first element contains our result set
+    const notes = results[0];
+    
+    res.json(notes);
+  } catch (error) {
+    console.error('Database error:', error);
+    res.status(500).json({ 
+      message: 'Error fetching notes', 
+      error: error.message 
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
