@@ -376,58 +376,6 @@ app.get('/api/notes/:userId/:plantObjId', async (req, res) => {
   }
 });
 
-// Add endpoint for updating a note
-app.post('/api/notes/update', async (req, res) => {
-  try {
-    const {
-      userId,
-      plantObjId,
-      noteId,
-      newContent
-    } = req.body;
-
-    console.log('Updating note:', {
-      userId,
-      plantObjId,
-      noteId,
-      newContent
-    });
-
-    const [result] = await pool.execute(
-      'CALL UpdateNote(?, ?, ?, ?)',
-      [
-        userId,
-        plantObjId,
-        noteId,
-        newContent
-      ]
-    );
-
-    res.json({
-      success: true,
-      message: 'Note updated successfully',
-      noteId
-    });
-
-  } catch (error) {
-    console.error('Detailed error:', {
-      message: error.message,
-      code: error.code,
-      sqlState: error.sqlState,
-      sqlMessage: error.sqlMessage
-    });
-    res.status(500).json({
-      message: 'Error updating note',
-      error: error.message,
-      details: {
-        code: error.code,
-        sqlState: error.sqlState,
-        sqlMessage: error.sqlMessage
-      }
-    });
-  }
-});
-
 // Add endpoint for adding a new note
 app.post('/api/notes/add', async (req, res) => {
   try {
@@ -437,13 +385,13 @@ app.post('/api/notes/add', async (req, res) => {
       content
     } = req.body;
 
-    console.log('Adding new note:', {
+    console.log('Adding new note - Request:', {
       userId,
       plantObjId,
       content
     });
 
-    const [result] = await pool.execute(
+    const [results] = await pool.execute(
       'CALL AddNote(?, ?, ?)',
       [
         userId,
@@ -452,10 +400,17 @@ app.post('/api/notes/add', async (req, res) => {
       ]
     );
 
-    // Get the newly created note ID from the result
-    const noteId = result[0][0].note_id;
+    console.log('AddNote SP Results:', results);
+    console.log('First Result Set:', results[0]);
 
-    res.json({
+    // Check if we have results before accessing them
+    const noteId = results[0]?.[0]?.note_id;
+    
+    if (!noteId) {
+      throw new Error('Note ID not returned from stored procedure');
+    }
+
+    const response = {
       success: true,
       message: 'Note added successfully',
       note: {
@@ -463,39 +418,91 @@ app.post('/api/notes/add', async (req, res) => {
         content,
         timestamp: new Date().toISOString()
       }
-    });
+    };
+
+    console.log('Sending response:', response);
+    res.json(response);
 
   } catch (error) {
-    console.error('Detailed error:', {
+    console.error('Error in /notes/add:', {
+      error,
       message: error.message,
-      code: error.code,
-      sqlState: error.sqlState,
-      sqlMessage: error.sqlMessage
+      stack: error.stack,
+      sqlMessage: error.sqlMessage,
+      sqlState: error.sqlState
     });
     res.status(500).json({
       message: 'Error adding note',
-      error: error.message,
-      details: {
-        code: error.code,
-        sqlState: error.sqlState,
-        sqlMessage: error.sqlMessage
-      }
+      error: error.message
     });
   }
 });
 
-// Add endpoint for deleting a note
+// Update endpoint for updating a note
+app.post('/api/notes/update', async (req, res) => {
+  try {
+    const {
+      userId,
+      plantObjId,
+      noteId,
+      newContent
+    } = req.body;
+
+    console.log('Updating note - Request:', {
+      userId,
+      plantObjId,
+      noteId,
+      newContent
+    });
+
+    const [results] = await pool.execute(
+      'CALL UpdateNote(?, ?, ?, ?)',
+      [
+        userId,
+        plantObjId,
+        noteId,
+        newContent
+      ]
+    );
+
+    console.log('UpdateNote SP Results:', results);
+
+    const response = {
+      success: true,
+      message: 'Note updated successfully',
+      noteId
+    };
+
+    console.log('Sending response:', response);
+    res.json(response);
+
+  } catch (error) {
+    console.error('Error in /notes/update:', {
+      error,
+      message: error.message,
+      stack: error.stack,
+      sqlMessage: error.sqlMessage,
+      sqlState: error.sqlState
+    });
+    res.status(500).json({
+      message: 'Error updating note',
+      error: error.message
+    });
+  }
+});
+
+// Update endpoint for deleting a note
 app.delete('/api/notes/:userId/:plantObjId/:noteId', async (req, res) => {
   try {
     const { userId, plantObjId, noteId } = req.params;
 
-    console.log('Deleting note:', {
+    console.log('Deleting note - Request:', {
       userId,
       plantObjId,
       noteId
     });
 
-    const [result] = await pool.execute(
+    const [results] = await pool.execute(
       'CALL DeleteNote(?, ?, ?)',
       [
         parseInt(userId),
@@ -504,27 +511,28 @@ app.delete('/api/notes/:userId/:plantObjId/:noteId', async (req, res) => {
       ]
     );
 
-    res.json({
+    console.log('DeleteNote SP Results:', results);
+
+    const response = {
       success: true,
       message: 'Note deleted successfully',
       noteId
-    });
+    };
+
+    console.log('Sending response:', response);
+    res.json(response);
 
   } catch (error) {
-    console.error('Detailed error:', {
+    console.error('Error in /notes/delete:', {
+      error,
       message: error.message,
-      code: error.code,
-      sqlState: error.sqlState,
-      sqlMessage: error.sqlMessage
+      stack: error.stack,
+      sqlMessage: error.sqlMessage,
+      sqlState: error.sqlState
     });
     res.status(500).json({
       message: 'Error deleting note',
-      error: error.message,
-      details: {
-        code: error.code,
-        sqlState: error.sqlState,
-        sqlMessage: error.sqlMessage
-      }
+      error: error.message
     });
   }
 });
