@@ -376,5 +376,158 @@ app.get('/api/notes/:userId/:plantObjId', async (req, res) => {
   }
 });
 
+// Add endpoint for updating a note
+app.post('/api/notes/update', async (req, res) => {
+  try {
+    const {
+      userId,
+      plantObjId,
+      noteId,
+      newContent
+    } = req.body;
+
+    console.log('Updating note:', {
+      userId,
+      plantObjId,
+      noteId,
+      newContent
+    });
+
+    const [result] = await pool.execute(
+      'CALL UpdateNote(?, ?, ?, ?)',
+      [
+        userId,
+        plantObjId,
+        noteId,
+        newContent
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: 'Note updated successfully',
+      noteId
+    });
+
+  } catch (error) {
+    console.error('Detailed error:', {
+      message: error.message,
+      code: error.code,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    res.status(500).json({
+      message: 'Error updating note',
+      error: error.message,
+      details: {
+        code: error.code,
+        sqlState: error.sqlState,
+        sqlMessage: error.sqlMessage
+      }
+    });
+  }
+});
+
+// Add endpoint for adding a new note
+app.post('/api/notes/add', async (req, res) => {
+  try {
+    const {
+      userId,
+      plantObjId,
+      content
+    } = req.body;
+
+    console.log('Adding new note:', {
+      userId,
+      plantObjId,
+      content
+    });
+
+    const [result] = await pool.execute(
+      'CALL AddNote(?, ?, ?)',
+      [
+        userId,
+        plantObjId,
+        content
+      ]
+    );
+
+    // Get the newly created note ID from the result
+    const noteId = result[0][0].note_id;
+
+    res.json({
+      success: true,
+      message: 'Note added successfully',
+      note: {
+        note_id: noteId,
+        content,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Detailed error:', {
+      message: error.message,
+      code: error.code,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    res.status(500).json({
+      message: 'Error adding note',
+      error: error.message,
+      details: {
+        code: error.code,
+        sqlState: error.sqlState,
+        sqlMessage: error.sqlMessage
+      }
+    });
+  }
+});
+
+// Add endpoint for deleting a note
+app.delete('/api/notes/:userId/:plantObjId/:noteId', async (req, res) => {
+  try {
+    const { userId, plantObjId, noteId } = req.params;
+
+    console.log('Deleting note:', {
+      userId,
+      plantObjId,
+      noteId
+    });
+
+    const [result] = await pool.execute(
+      'CALL DeleteNote(?, ?, ?)',
+      [
+        parseInt(userId),
+        parseInt(plantObjId),
+        parseInt(noteId)
+      ]
+    );
+
+    res.json({
+      success: true,
+      message: 'Note deleted successfully',
+      noteId
+    });
+
+  } catch (error) {
+    console.error('Detailed error:', {
+      message: error.message,
+      code: error.code,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    res.status(500).json({
+      message: 'Error deleting note',
+      error: error.message,
+      details: {
+        code: error.code,
+        sqlState: error.sqlState,
+        sqlMessage: error.sqlMessage
+      }
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
