@@ -552,5 +552,45 @@ app.delete('/api/notes/:userId/:plantObjId/:noteId', async (req, res) => {
   }
 });
 
+// Add this endpoint to handle photo fetching
+app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
+  const { userId, plantObjId } = req.params;
+
+  try {
+    // Validate input parameters
+    if (!userId || !plantObjId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing required parameters' 
+      });
+    }
+
+    // Call the stored procedure
+    const [rows] = await pool.query(
+      'CALL getPhotos(?, ?)',
+      [parseInt(userId), parseInt(plantObjId)]
+    );
+
+    // The stored procedure returns an array in the first element
+    const photos = rows[0];
+
+    // Transform the stage JSON string to object if needed
+    const transformedPhotos = photos.map(photo => ({
+      ...photo,
+      stage: typeof photo.stage === 'string' ? JSON.parse(photo.stage) : photo.stage
+    }));
+
+    res.json(transformedPhotos);
+
+  } catch (error) {
+    console.error('Error fetching photos:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch photos',
+      error: error.message 
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
