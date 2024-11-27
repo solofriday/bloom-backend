@@ -355,7 +355,7 @@ app.post('/api/plants/update', async (req, res) => {
   }
 });
 
-// Add endpoint for getting notes for a specific plant
+// Update endpoint for getting notes for a specific plant
 app.get('/api/notes/:userId/:plantObjId', async (req, res) => {
   try {
     const { userId, plantObjId } = req.params;
@@ -363,8 +363,12 @@ app.get('/api/notes/:userId/:plantObjId', async (req, res) => {
     
     const [results] = await pool.execute('CALL GetAllNotes(?, ?)', [userId, plantObjId]);
     
-    // The first element contains our result set
-    const notes = results[0];
+    // Transform the results to use note_id instead of id
+    const notes = results[0].map(note => ({
+      note_id: note.id,  // Map id to note_id
+      content: note.content,
+      timestamp: note.timestamp
+    }));
     
     res.json(notes);
   } catch (error) {
@@ -494,27 +498,39 @@ app.delete('/api/notes/:userId/:plantObjId/:noteId', async (req, res) => {
   try {
     const { userId, plantObjId, noteId } = req.params;
 
-    console.log('Deleting note - Request:', {
-      userId,
-      plantObjId,
-      noteId
+    // Convert parameters to integers
+    const userIdInt = parseInt(userId);
+    const plantObjIdInt = parseInt(plantObjId);
+    const noteIdInt = parseInt(noteId);
+
+    console.log('Deleting note - Parameters:', {
+      userId: userIdInt,
+      plantObjId: plantObjIdInt,
+      noteId: noteIdInt
     });
 
     const [results] = await pool.execute(
       'CALL DeleteNote(?, ?, ?)',
-      [
-        parseInt(userId),
-        parseInt(plantObjId),
-        parseInt(noteId)
-      ]
+      [userIdInt, plantObjIdInt, noteIdInt]
     );
 
     console.log('DeleteNote SP Results:', results);
 
+    // Check if any rows were affected
+    const affectedRows = results.affectedRows || 0;
+    
+    if (affectedRows === 0) {
+      console.log('No note was deleted - Note might not exist or belong to user');
+      return res.status(404).json({
+        success: false,
+        message: 'Note not found or not authorized to delete'
+      });
+    }
+
     const response = {
       success: true,
       message: 'Note deleted successfully',
-      noteId
+      note_id: noteIdInt  // Changed from noteId to note_id for consistency
     };
 
     console.log('Sending response:', response);
@@ -529,6 +545,7 @@ app.delete('/api/notes/:userId/:plantObjId/:noteId', async (req, res) => {
       sqlState: error.sqlState
     });
     res.status(500).json({
+      success: false,
       message: 'Error deleting note',
       error: error.message
     });
