@@ -611,12 +611,19 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
   }
 });
 
-// Update the photos/add endpoint
+// Update the photos/add endpoint to include better logging
 app.post('/api/photos/add', upload.single('image'), async (req, res) => {
   try {
-    const { userId, plantObjId } = req.body;
+    const { userId, plantObjId, stageId, stageName } = req.body;
+    console.log('Adding photo with params:', { 
+      userId, 
+      plantObjId, 
+      stageId, 
+      stageName,
+      hasFile: !!req.file,
+      body: req.body // Log the full body to see what's being received
+    });
 
-    // Validate required fields
     if (!req.file || !userId || !plantObjId) {
       return res.status(400).json({ 
         success: false,
@@ -638,33 +645,51 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
     const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
     const dateTaken = await getImageDate(req.file.buffer);
 
-    // Call AddPhoto stored procedure and get the new photo details directly
+    // Update the AddPhoto stored procedure call to include stage information
     const [result] = await pool.execute(
-      'CALL AddPhoto(?, ?, ?, ?)',
+      'CALL AddPhoto(?, ?, ?, ?, ?, ?)',
       [
         parseInt(userId),
         parseInt(plantObjId),
         imageUrl,
-        dateTaken
+        dateTaken,
+        stageId ? parseInt(stageId) : null,
+        stageName || null
       ]
     );
 
-    // The SP now returns the new photo details in the first row
-    const newPhoto = result[0][0];
+    // Log the result from the stored procedure
+    console.log('AddPhoto SP result:', result);
 
-    res.json({
+    // The SP returns the new photo details in the first row
+    const newPhoto = result[0][0];
+    console.log('New photo details:', newPhoto);
+
+    const response = {
       success: true,
       photo: {
         id: newPhoto.photo_id,
         url: newPhoto.url,
         date_taken: newPhoto.date_taken,
         date_uploaded: newPhoto.date_uploaded,
-        stage: typeof newPhoto.stage === 'string' ? JSON.parse(newPhoto.stage) : newPhoto.stage
+        stage: stageId ? {
+          id: parseInt(stageId),
+          name: stageName
+        } : null
       }
-    });
+    };
+
+    console.log('Sending response:', response);
+    res.json(response);
 
   } catch (error) {
-    console.error('Error adding photo:', error);
+    console.error('Error adding photo:', {
+      error,
+      message: error.message,
+      stack: error.stack,
+      sql: error.sql,
+      sqlMessage: error.sqlMessage
+    });
     res.status(500).json({ 
       success: false,
       message: 'Error adding photo',
