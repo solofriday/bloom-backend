@@ -614,14 +614,13 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
 // Update the photos/add endpoint to include better logging
 app.post('/api/photos/add', upload.single('image'), async (req, res) => {
   try {
-    const { userId, plantObjId, stageId, stageName } = req.body;
+    const { userId, plantObjId, stageId } = req.body;
     console.log('Adding photo with params:', { 
       userId, 
       plantObjId, 
-      stageId, 
-      stageName,
+      stageId,
       hasFile: !!req.file,
-      body: req.body // Log the full body to see what's being received
+      body: req.body
     });
 
     if (!req.file || !userId || !plantObjId) {
@@ -645,16 +644,15 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
     const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
     const dateTaken = await getImageDate(req.file.buffer);
 
-    // Update the AddPhoto stored procedure call to include stage information
+    // Call AddPhoto with all 5 required parameters
     const [result] = await pool.execute(
-      'CALL AddPhoto(?, ?, ?, ?, ?, ?)',
+      'CALL AddPhoto(?, ?, ?, ?, ?)',
       [
         parseInt(userId),
         parseInt(plantObjId),
         imageUrl,
         dateTaken,
-        stageId ? parseInt(stageId) : null,
-        stageName || null
+        stageId ? parseInt(stageId) : null
       ]
     );
 
@@ -665,16 +663,17 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
     const newPhoto = result[0][0];
     console.log('New photo details:', newPhoto);
 
+    // Format the response to match what the frontend expects
     const response = {
       success: true,
       photo: {
-        id: newPhoto.photo_id,
-        url: newPhoto.url,
-        date_taken: newPhoto.date_taken,
-        date_uploaded: newPhoto.date_uploaded,
+        id: newPhoto.id || newPhoto.photo_id, // Handle both possible field names
+        url: imageUrl,
+        date_taken: dateTaken,
+        date_uploaded: new Date().toISOString(),
         stage: stageId ? {
           id: parseInt(stageId),
-          name: stageName
+          name: newPhoto.stage_name || result[0][0].stage_name || 'Unknown Stage'
         } : null
       }
     };
