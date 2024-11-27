@@ -400,14 +400,12 @@ app.post('/api/notes/add', async (req, res) => {
       ]
     );
 
-    console.log('AddNote SP Results:', results);
-    console.log('First Result Set:', results[0]);
+    // The SP returns newNoteId in the first row of the first result set
+    const noteId = results[0][0]?.newNoteId;
 
-    // Check if we have results before accessing them
-    const noteId = results[0]?.[0]?.note_id;
-    
     if (!noteId) {
-      throw new Error('Note ID not returned from stored procedure');
+      console.error('Note ID not found in SP results:', results);
+      throw new Error('Failed to get note ID from stored procedure');
     }
 
     const response = {
