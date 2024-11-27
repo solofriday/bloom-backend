@@ -558,13 +558,14 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
   try {
     // Validate input parameters
     if (!userId || !plantObjId) {
+      console.log('Missing parameters:', { userId, plantObjId });
       return res.status(400).json({ 
         success: false, 
         message: 'Missing required parameters' 
       });
     }
 
-    console.log('Fetching photos for:', { userId, plantObjId });
+    console.log('Starting photo fetch:', { userId, plantObjId });
 
     // Call the stored procedure
     const [rows] = await pool.query(
@@ -572,21 +573,36 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
       [parseInt(userId), parseInt(plantObjId)]
     );
 
+    // Log the raw database response
+    console.log('Database response:', {
+      rowsLength: rows.length,
+      firstRow: rows[0],
+      fullRows: rows
+    });
+
     // The stored procedure returns an array in the first element
     const photos = rows[0];
-    console.log('Retrieved photos:', photos);
+    console.log('Photos array:', photos);
 
     // Transform the stage JSON string to object if needed
-    const transformedPhotos = photos.map(photo => ({
-      ...photo,
-      stage: photo.stage ? (typeof photo.stage === 'string' ? JSON.parse(photo.stage) : photo.stage) : null
-    }));
+    const transformedPhotos = photos.map(photo => {
+      console.log('Processing photo:', photo);
+      return {
+        ...photo,
+        stage: photo.stage ? (typeof photo.stage === 'string' ? JSON.parse(photo.stage) : photo.stage) : null
+      };
+    });
 
-    console.log('Transformed photos:', transformedPhotos);
+    console.log('Sending transformed photos:', transformedPhotos);
     res.json(transformedPhotos);
 
   } catch (error) {
-    console.error('Error fetching photos:', error);
+    console.error('Error fetching photos:', {
+      error,
+      message: error.message,
+      sql: error.sql,
+      sqlMessage: error.sqlMessage
+    });
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch photos',
