@@ -611,7 +611,7 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
   }
 });
 
-// Update the photos/add endpoint to include better logging
+// Update the photos/add endpoint to be simpler
 app.post('/api/photos/add', upload.single('image'), async (req, res) => {
   try {
     const { userId, plantObjId, stageId } = req.body;
@@ -619,8 +619,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       userId, 
       plantObjId, 
       stageId,
-      hasFile: !!req.file,
-      body: req.body
+      hasFile: !!req.file
     });
 
     if (!req.file || !userId || !plantObjId) {
@@ -630,7 +629,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       });
     }
 
-    // Update the file path to include userId
+    // Upload to S3
     const fileKey = `plants/${userId}/${plantObjId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
     
     await s3Client.send(new PutObjectCommand({
@@ -652,8 +651,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       plantObjId: parseInt(plantObjId),
       imageUrl,
       dateTaken,
-      stageId: parsedStageId,
-      rawStageId: stageId
+      stageId: parsedStageId
     });
 
     // Call AddPhoto stored procedure with all parameters
@@ -664,26 +662,10 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
         parseInt(plantObjId),
         imageUrl,
         dateTaken,
-        parsedStageId  // Make sure this is properly passed to the stored procedure
+        parsedStageId
       ]
     );
 
-    // Get the stage information if stageId was provided
-    let stageInfo = null;
-    if (parsedStageId) {
-      const [stageResult] = await pool.execute(
-        'SELECT id, name FROM stages WHERE id = ?',
-        [parsedStageId]
-      );
-      if (stageResult.length > 0) {
-        stageInfo = {
-          id: stageResult[0].id,
-          name: stageResult[0].name
-        };
-      }
-    }
-
-    // Format the response with stage information
     const response = {
       success: true,
       photo: {
@@ -691,7 +673,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
         url: imageUrl,
         date_taken: dateTaken,
         date_uploaded: new Date().toISOString(),
-        stage: stageInfo
+        stage: parsedStageId ? { id: parsedStageId } : null
       }
     };
 
