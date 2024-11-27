@@ -644,6 +644,16 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
     const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
     const dateTaken = await getImageDate(req.file.buffer);
 
+    // Add this logging right before the AddPhoto call
+    console.log('Calling AddPhoto with params:', {
+      userId: parseInt(userId),
+      plantObjId: parseInt(plantObjId),
+      imageUrl,
+      dateTaken,
+      stageId: stageId ? parseInt(stageId) : null,
+      rawStageId: stageId
+    });
+
     // Call AddPhoto with all 5 required parameters
     const [result] = await pool.execute(
       'CALL AddPhoto(?, ?, ?, ?, ?)',
