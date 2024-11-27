@@ -56,7 +56,6 @@ const upload = multer({
     }
   },
 });
-
 // Helper function to get image date from EXIF
 async function getImageDate(buffer) {
   try {
@@ -592,5 +591,68 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
   }
 });
 
+// Update the photos/add endpoint
+app.post('/api/photos/add', upload.single('image'), async (req, res) => {
+  try {
+    const { userId, plantObjId } = req.body;
+
+    // Validate required fields
+    if (!req.file || !userId || !plantObjId) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Missing required fields' 
+      });
+    }
+
+    // Upload to S3
+    const fileKey = `plants/${plantObjId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+    
+    await s3Client.send(new PutObjectCommand({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      Key: fileKey,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+      ACL: 'public-read',
+    }));
+
+    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
+    const dateTaken = await getImageDate(req.file.buffer);
+
+    // Call AddPhoto stored procedure and get the new photo details directly
+    const [result] = await pool.execute(
+      'CALL AddPhoto(?, ?, ?, ?)',
+      [
+        parseInt(userId),
+        parseInt(plantObjId),
+        imageUrl,
+        dateTaken
+      ]
+    );
+
+    // The SP now returns the new photo details in the first row
+    const newPhoto = result[0][0];
+
+    res.json({
+      success: true,
+      photo: {
+        id: newPhoto.photo_id,
+        url: newPhoto.url,
+        date_taken: newPhoto.date_taken,
+        date_uploaded: newPhoto.date_uploaded,
+        stage: typeof newPhoto.stage === 'string' ? JSON.parse(newPhoto.stage) : newPhoto.stage
+      }
+    });
+
+  } catch (error) {
+    console.error('Error adding photo:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error adding photo',
+      error: error.message 
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
+
