@@ -667,23 +667,7 @@ app.delete('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
       photoId
     });
 
-    // First verify the photo exists and belongs to this plant/user
-    const [checkPhoto] = await pool.execute(
-      'SELECT p.* FROM photo p WHERE p.id = ? AND p.plant_obj_id = ?',
-      [parseInt(photoId), parseInt(plantObjId)]
-    );
-
-    console.log('Photo check results:', checkPhoto);
-
-    if (!checkPhoto.length) {
-      console.log('Photo not found in database:', { photoId, plantObjId });
-      return res.status(404).json({
-        success: false,
-        message: 'Photo not found in database'
-      });
-    }
-
-    // Now proceed with deletion
+    // Call DeletePhoto SP directly
     const [results] = await pool.execute(
       'CALL DeletePhoto(?, ?, ?)',
       [parseInt(userId), parseInt(plantObjId), parseInt(photoId)]
