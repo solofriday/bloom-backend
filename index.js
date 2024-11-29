@@ -614,11 +614,13 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
 // Update the photos/add endpoint to be simpler
 app.post('/api/photos/add', upload.single('image'), async (req, res) => {
   try {
-    const { userId, plantObjId, stageId } = req.body;
+    const { userId, plantObjId, stageId, dateTaken } = req.body;
+    console.log('Raw request body:', req.body); // Log the raw request
     console.log('Adding photo with params:', { 
       userId, 
       plantObjId, 
       stageId,
+      dateTaken, // Log the dateTaken value
       hasFile: !!req.file
     });
 
@@ -641,7 +643,21 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
     }));
 
     const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
-    const dateTaken = await getImageDate(req.file.buffer);
+
+    // Use provided date or fall back to EXIF
+    let photoDate;
+    if (dateTaken) {
+      photoDate = new Date(dateTaken);
+      console.log('Using provided date:', dateTaken, 'parsed as:', photoDate);
+    } else {
+      try {
+        photoDate = await getImageDate(req.file.buffer);
+        console.log('Using EXIF date:', photoDate);
+      } catch (err) {
+        console.log('Error getting EXIF date, using current date:', err);
+        photoDate = new Date();
+      }
+    }
 
     // Parse stageId as integer if it exists
     const parsedStageId = stageId ? parseInt(stageId) : null;
@@ -650,7 +666,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       userId: parseInt(userId),
       plantObjId: parseInt(plantObjId),
       imageUrl,
-      dateTaken,
+      photoDate: photoDate.toISOString(), // Log the ISO string
       stageId: parsedStageId
     });
 
@@ -661,7 +677,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
         parseInt(userId),
         parseInt(plantObjId),
         imageUrl,
-        dateTaken,
+        photoDate,
         parsedStageId
       ]
     );
@@ -671,7 +687,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       photo: {
         id: result[0][0].id || result[0][0].photo_id,
         url: imageUrl,
-        date_taken: dateTaken,
+        date_taken: photoDate.toISOString(), // Ensure we send back ISO string
         date_uploaded: new Date().toISOString(),
         stage: parsedStageId ? { id: parsedStageId } : null
       }
@@ -681,13 +697,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
     res.json(response);
 
   } catch (error) {
-    console.error('Error adding photo:', {
-      error,
-      message: error.message,
-      stack: error.stack,
-      sql: error.sql,
-      sqlMessage: error.sqlMessage
-    });
+    console.error('Error adding photo:', error);
     res.status(500).json({ 
       success: false,
       message: 'Error adding photo',
