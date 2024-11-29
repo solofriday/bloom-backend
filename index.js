@@ -15,7 +15,12 @@ console.log('SPACES_CONFIG:', {
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:5173', 'https://bloom.cursor.sh'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept'],
+  credentials: true
+}));
 app.use(express.json());
 
 // MySQL connection pool with optimized settings
@@ -57,10 +62,10 @@ app.get('/api/plants', async (req, res) => {
           heat_tolerance: null
         });
 
-        // Normalize photo structure
+        // Normalize photo structure - REMOVE URL CONSTRUCTION
         const normalizedPhotos = photos.map(photo => ({
           id: photo.photo_id,  // Map photo_id to id
-          url: photo.url,
+          filename: photo.filename,  // Just return filename
           date_taken: photo.date_taken,
           date_uploaded: photo.date_uploaded,
           stage: photo.stage
@@ -73,7 +78,7 @@ app.get('/api/plants', async (req, res) => {
           variety,
           stage,
           location,
-          photos: normalizedPhotos,
+          photos: normalizedPhotos,  // Use normalized photos without URLs
           notes,
           warning,
           date_updated: plant.date_updated,
@@ -531,15 +536,11 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       [parseInt(userId), parseInt(plantObjId), filename, photoDate, parsedStageId]
     );
 
-    // Construct full URL for response
-    const fullUrl = `${SPACES_CONFIG.BASE_URL}/${getFileKey(userId, plantObjId, filename)}`;
-
     const response = {
       success: true,
       photo: {
         photo_id: result[0][0].photo_id,
-        url: fullUrl,
-        filename: filename, // Include filename in response
+        filename: filename,
         date_taken: photoDate.toISOString(),
         date_uploaded: new Date().toISOString(),
         stage: parsedStageId ? { id: parsedStageId } : null
