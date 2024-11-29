@@ -12,12 +12,12 @@ const s3Client = new S3Client({
   }
 });
 
-// Enhanced Multer configuration
+// Multer configuration
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
-    files: 1 // Only allow 1 file per request
+    files: 1
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
@@ -28,35 +28,43 @@ const upload = multer({
   },
 });
 
-// Enhanced uploadFile function with more parameters
+function getFileKey(userId, plantObjId, filename) {
+  return `plants/${userId}/${plantObjId}/${filename}`;
+}
+
 async function uploadFile(file, userId, plantObjId) {
   if (!file || !userId || !plantObjId) {
     throw new Error('Missing required parameters for file upload');
   }
 
-  const fileKey = `plants/${userId}/${plantObjId}/${uuidv4()}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+  // Generate just the filename portion
+  const filename = `${uuidv4()}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
+  
+  // Get full path for S3
+  const fullPath = getFileKey(userId, plantObjId, filename);
   
   await s3Client.send(new PutObjectCommand({
     Bucket: process.env.DO_SPACES_BUCKET,
-    Key: fileKey,
+    Key: fullPath,
     Body: file.buffer,
     ContentType: file.mimetype,
     ACL: 'public-read',
   }));
 
-  return `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
+  // Return just the filename
+  return filename;
 }
 
-// Delete file from S3
-async function deleteFile(fileUrl) {
-  if (!fileUrl) {
-    throw new Error('File URL is required for deletion');
+async function deleteFile(userId, plantObjId, filename) {
+  if (!filename) {
+    throw new Error('Filename is required for deletion');
   }
 
-  const fileKey = fileUrl.split('.com/')[1];
+  const fullPath = getFileKey(userId, plantObjId, filename);
+  
   return s3Client.send(new DeleteObjectCommand({
     Bucket: process.env.DO_SPACES_BUCKET,
-    Key: fileKey
+    Key: fullPath
   }));
 }
 
@@ -64,5 +72,6 @@ module.exports = {
   s3Client,
   upload,
   uploadFile,
-  deleteFile
+  deleteFile,
+  getFileKey
 };

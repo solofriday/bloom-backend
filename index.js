@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
-const { upload, uploadFile, deleteFile } = require('./utils/s3');
+const { upload, uploadFile, deleteFile, getFileKey } = require('./utils/s3');
+const { SPACES_CONFIG } = require('./config/spaces');
 
 // Initialize express
 const app = express();
@@ -476,53 +477,24 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
   const { userId, plantObjId } = req.params;
 
   try {
-    // Validate input parameters
-    if (!userId || !plantObjId) {
-      console.log('Missing parameters:', { userId, plantObjId });
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Missing required parameters' 
-      });
-    }
-
-    console.log('Starting photo fetch:', { userId, plantObjId });
-
-    // Call the stored procedure
     const [rows] = await pool.query(
       'CALL GetPhotos(?, ?)',
       [parseInt(userId), parseInt(plantObjId)]
     );
 
-    // Log the raw database response
-    console.log('Database response:', {
-      rowsLength: rows.length,
-      firstRow: rows[0],
-      fullRows: rows
-    });
+    // Transform the photos to include full URLs
+    const photos = rows[0].map(photo => ({
+      ...photo,
+      url: `${SPACES_CONFIG.BASE_URL}/${getFileKey(userId, plantObjId, photo.filename)}`,
+      stage: photo.stage ? 
+        (typeof photo.stage === 'string' ? JSON.parse(photo.stage) : photo.stage) 
+        : null
+    }));
 
-    // The stored procedure returns an array in the first element
-    const photos = rows[0];
-    console.log('Photos array:', photos);
-
-    // Transform the stage JSON string to object if needed
-    const transformedPhotos = photos.map(photo => {
-      console.log('Processing photo:', photo);
-      return {
-        ...photo,
-        stage: photo.stage ? (typeof photo.stage === 'string' ? JSON.parse(photo.stage) : photo.stage) : null
-      };
-    });
-
-    console.log('Sending transformed photos:', transformedPhotos);
-    res.json(transformedPhotos);
+    res.json(photos);
 
   } catch (error) {
-    console.error('Error fetching photos:', {
-      error,
-      message: error.message,
-      sql: error.sql,
-      sqlMessage: error.sqlMessage
-    });
+    console.error('Error fetching photos:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch photos',
@@ -531,79 +503,43 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
   }
 });
 
-// Update the photos/add endpoint to be simpler
+// Update the photos/add endpoint
 app.post('/api/photos/add', upload.single('image'), async (req, res) => {
   try {
     const { userId, plantObjId, stageId, dateTaken } = req.body;
-    console.log('Raw request body:', req.body);
-    console.log('Adding photo with params:', { 
-      userId, 
-      plantObjId, 
-      stageId,
-      dateTaken,
-      hasFile: !!req.file
-    });
+    console.log('Adding photo with params:', { userId, plantObjId, stageId, dateTaken });
 
     if (!req.file || !userId || !plantObjId) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Missing required fields' 
-      });
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    // Upload to S3 using the imported function
-    const imageUrl = await uploadFile(req.file, userId, plantObjId);
+    // Upload to S3 - now returns just the filename
+    const filename = await uploadFile(req.file, userId, plantObjId);
 
-    // Use provided date or fall back to EXIF
-    let photoDate;
-    if (dateTaken) {
-      photoDate = new Date(dateTaken);
-      console.log('Using provided date:', dateTaken, 'parsed as:', photoDate);
-    } else {
-      try {
-        photoDate = await getImageDate(req.file.buffer);
-        console.log('Using EXIF date:', photoDate);
-      } catch (err) {
-        console.log('Error getting EXIF date, using current date:', err);
-        photoDate = new Date();
-      }
-    }
-
-    // Parse stageId as integer if it exists
+    let photoDate = dateTaken ? new Date(dateTaken) : new Date();
     const parsedStageId = stageId ? parseInt(stageId) : null;
 
-    console.log('Calling AddPhoto with params:', {
-      userId: parseInt(userId),
-      plantObjId: parseInt(plantObjId),
-      imageUrl,
-      photoDate: photoDate.toISOString(), // Log the ISO string
-      stageId: parsedStageId
-    });
-
-    // Call AddPhoto stored procedure with all parameters
+    // Call AddPhoto SP with just the filename
     const [result] = await pool.execute(
       'CALL AddPhoto(?, ?, ?, ?, ?)',
-      [
-        parseInt(userId),
-        parseInt(plantObjId),
-        imageUrl,
-        photoDate,
-        parsedStageId
-      ]
+      [parseInt(userId), parseInt(plantObjId), filename, photoDate, parsedStageId]
     );
+
+    // Construct full URL for response
+    const fullUrl = `${SPACES_CONFIG.BASE_URL}/${getFileKey(userId, plantObjId, filename)}`;
 
     const response = {
       success: true,
       photo: {
-        id: result[0][0].id || result[0][0].photo_id,
-        url: imageUrl,
-        date_taken: photoDate.toISOString(), // Ensure we send back ISO string
+        photo_id: result[0][0].photo_id,
+        url: fullUrl,
+        filename: filename, // Include filename in response
+        date_taken: photoDate.toISOString(),
         date_uploaded: new Date().toISOString(),
         stage: parsedStageId ? { id: parsedStageId } : null
       }
     };
 
-    console.log('Sending response:', response);
     res.json(response);
 
   } catch (error) {
@@ -621,34 +557,27 @@ app.delete('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
   const { userId, plantObjId, photoId } = req.params;
 
   try {
-    console.log('Attempting to delete photo:', {
-      userId,
-      plantObjId,
-      photoId
-    });
-
-    // Call DeletePhoto SP directly
+    // Call DeletePhoto SP which now returns both photo_id and filename
     const [results] = await pool.execute(
       'CALL DeletePhoto(?, ?, ?)',
       [parseInt(userId), parseInt(plantObjId), parseInt(photoId)]
     );
 
-    console.log('DeletePhoto SP results:', results);
-
-    // Check SP results
-    const deletedPhotoId = results[0]?.[0]?.deleted_photo_id;
-
-    if (!deletedPhotoId) {
+    const deletedPhoto = results[0]?.[0];
+    if (!deletedPhoto?.deleted_photo_id || !deletedPhoto?.filename) {
       return res.status(404).json({
         success: false,
-        message: 'Failed to delete photo'
+        message: 'Photo not found'
       });
     }
+
+    // Delete from S3 using the returned filename
+    await deleteFile(userId, plantObjId, deletedPhoto.filename);
 
     res.json({
       success: true,
       message: 'Photo deleted successfully',
-      photoId: deletedPhotoId
+      photoId: deletedPhoto.deleted_photo_id
     });
 
   } catch (error) {
