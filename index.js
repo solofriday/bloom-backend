@@ -1,11 +1,7 @@
-// Updated bloom-backend index.js
-
 const express = require('express');
 const cors = require('cors');
-const multer = require('multer');
-const { v4: uuidv4 } = require('uuid');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const mysql = require('mysql2/promise');
+const { upload, uploadFile, deleteFile } = require('./utils/s3');
 
 // Initialize express
 const app = express();
@@ -28,33 +24,7 @@ const pool = mysql.createPool({
   keepAliveInitialDelay: 0
 });
 
-// S3 client with optimized settings
-const s3Client = new S3Client({
-  endpoint: "https://nyc3.digitaloceanspaces.com",
-  region: "us-east-1",
-  credentials: {
-    accessKeyId: process.env.DO_SPACES_KEY,
-    secretAccessKey: process.env.DO_SPACES_SECRET
-  },
-  forcePathStyle: false,
-  maxAttempts: 3
-});
-
-// Multer setup with optimized file size
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-    files: 1 // Only allow 1 file per request
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Not an image! Please upload an image.'), false);
-    }
-  },
-});
+// API endpoints...
 
 // Updated API endpoint to get plants with stages and locations
 app.get('/api/plants', async (req, res) => {
@@ -565,12 +535,12 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
 app.post('/api/photos/add', upload.single('image'), async (req, res) => {
   try {
     const { userId, plantObjId, stageId, dateTaken } = req.body;
-    console.log('Raw request body:', req.body); // Log the raw request
+    console.log('Raw request body:', req.body);
     console.log('Adding photo with params:', { 
       userId, 
       plantObjId, 
       stageId,
-      dateTaken, // Log the dateTaken value
+      dateTaken,
       hasFile: !!req.file
     });
 
@@ -581,18 +551,8 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       });
     }
 
-    // Upload to S3
-    const fileKey = `plants/${userId}/${plantObjId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
-    
-    await s3Client.send(new PutObjectCommand({
-      Bucket: process.env.DO_SPACES_BUCKET,
-      Key: fileKey,
-      Body: req.file.buffer,
-      ContentType: req.file.mimetype,
-      ACL: 'public-read',
-    }));
-
-    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
+    // Upload to S3 using the imported function
+    const imageUrl = await uploadFile(req.file, userId, plantObjId);
 
     // Use provided date or fall back to EXIF
     let photoDate;
@@ -656,7 +616,7 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
   }
 });
 
-// Add this endpoint for deleting photos
+// Update the photo deletion endpoint
 app.delete('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
   const { userId, plantObjId, photoId } = req.params;
 
