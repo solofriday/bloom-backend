@@ -15,12 +15,7 @@ console.log('SPACES_CONFIG:', {
 const app = express();
 
 // Middleware
-app.use(cors({
-  origin: ['http://localhost:5173', 'https://bloom.cursor.sh'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Accept'],
-  credentials: true
-}));
+app.use(cors());
 app.use(express.json());
 
 // MySQL connection pool with optimized settings
