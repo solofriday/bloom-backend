@@ -489,10 +489,9 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
       [parseInt(userId), parseInt(plantObjId)]
     );
 
-    // Transform the photos to include full URLs
+    // Just return the raw data, no URL construction
     const photos = rows[0].map(photo => ({
       ...photo,
-      url: `${SPACES_CONFIG.BASE_URL}/${getFileKey(userId, plantObjId, photo.filename)}`,
       stage: photo.stage ? 
         (typeof photo.stage === 'string' ? JSON.parse(photo.stage) : photo.stage) 
         : null
