@@ -4,6 +4,12 @@ const mysql = require('mysql2/promise');
 const { upload, uploadFile, deleteFile, getFileKey } = require('./utils/s3');
 const { SPACES_CONFIG } = require('./config/spaces');
 
+// Add this check
+console.log('SPACES_CONFIG:', {
+  bucket: SPACES_CONFIG.BUCKET,
+  baseUrl: SPACES_CONFIG.BASE_URL
+});
+
 // Initialize express
 const app = express();
 
