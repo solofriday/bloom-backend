@@ -6,7 +6,6 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const mysql = require('mysql2/promise');
-const ExifReader = require('exif-reader');
 
 // Initialize express
 const app = express();
@@ -56,20 +55,6 @@ const upload = multer({
     }
   },
 });
-// Helper function to get image date from EXIF
-async function getImageDate(buffer) {
-  try {
-    const exifData = ExifReader.load(buffer);
-    if (exifData?.DateTimeOriginal?.description) {
-      return new Date(exifData.DateTimeOriginal.description.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'));
-    }
-    console.log('No DateTimeOriginal in EXIF data, using current date/time');
-    return new Date();
-  } catch (err) {
-    console.log('Error reading EXIF data:', err.message);
-    return new Date();
-  }
-}
 
 // Updated API endpoint to get plants with stages and locations
 app.get('/api/plants', async (req, res) => {
@@ -144,50 +129,6 @@ app.get('/api/plants', async (req, res) => {
     res.status(500).json({ 
       message: 'Error fetching plants', 
       error: error.message 
-    });
-  }
-});
-
-// Upload endpoint for plant stages
-app.post('/api/plant-stages/upload', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file || !req.body.status || !req.body.plantId) {
-      return res.status(400).json({ 
-        message: 'Missing required fields'
-      });
-    }
-
-    // Upload to S3
-    const fileKey = `plants/${req.body.plantId}/${uuidv4()}-${req.file.originalname.replace(/[^a-zA-Z0-9.-]/g, '-')}`;
-    
-    await s3Client.send(new PutObjectCommand({
-      Bucket: process.env.DO_SPACES_BUCKET,
-      Key: fileKey,
-      Body: req.file.buffer,
-      ContentType: req.file.mimetype,
-      ACL: 'public-read',
-    }));
-
-    const imageUrl = `https://${process.env.DO_SPACES_BUCKET}.nyc3.digitaloceanspaces.com/${fileKey}`;
-    const dateTaken = await getImageDate(req.file.buffer);
-
-    // Insert into database
-    const [result] = await pool.execute(
-      'INSERT INTO photo (storage_photo_id, plant_obj_id, date_taken, date_uploaded) VALUES (?, ?, ?, ?)',
-      [fileKey, req.body.plantId, dateTaken, new Date()]
-    );
-
-    res.json({
-      success: true,
-      photoId: result.insertId,
-      imageUrl
-    });
-
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ 
-      message: 'Error uploading image', 
-      error: error.message
     });
   }
 });
