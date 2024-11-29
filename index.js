@@ -652,24 +652,43 @@ app.delete('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
   const { userId, plantObjId, photoId } = req.params;
 
   try {
-    console.log('Deleting photo:', {
+    console.log('Attempting to delete photo:', {
       userId,
       plantObjId,
       photoId
     });
 
+    // First verify the photo exists and belongs to this plant/user
+    const [checkPhoto] = await pool.execute(
+      'SELECT p.* FROM photo p WHERE p.id = ? AND p.plant_obj_id = ?',
+      [parseInt(photoId), parseInt(plantObjId)]
+    );
+
+    console.log('Photo check results:', checkPhoto);
+
+    if (!checkPhoto.length) {
+      console.log('Photo not found in database:', { photoId, plantObjId });
+      return res.status(404).json({
+        success: false,
+        message: 'Photo not found in database'
+      });
+    }
+
+    // Now proceed with deletion
     const [results] = await pool.execute(
       'CALL DeletePhoto(?, ?, ?)',
       [parseInt(userId), parseInt(plantObjId), parseInt(photoId)]
     );
 
-    // The SP returns the deleted photo ID in the first row
-    const deletedPhotoId = results[0][0]?.deleted_photo_id;
+    console.log('DeletePhoto SP results:', results);
+
+    // Check SP results
+    const deletedPhotoId = results[0]?.[0]?.deleted_photo_id;
 
     if (!deletedPhotoId) {
       return res.status(404).json({
         success: false,
-        message: 'Photo not found or not authorized to delete'
+        message: 'Failed to delete photo'
       });
     }
 
