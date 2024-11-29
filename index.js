@@ -79,6 +79,15 @@ app.get('/api/plants', async (req, res) => {
           heat_tolerance: null
         });
 
+        // Normalize photo structure
+        const normalizedPhotos = photos.map(photo => ({
+          id: photo.photo_id,  // Map photo_id to id
+          url: photo.url,
+          date_taken: photo.date_taken,
+          date_uploaded: photo.date_uploaded,
+          stage: photo.stage
+        }));
+
         return {
           plant_obj_id: plant.plant_obj_id,
           user_id: plant.user_id,
@@ -86,7 +95,7 @@ app.get('/api/plants', async (req, res) => {
           variety,
           stage,
           location,
-          photos,
+          photos: normalizedPhotos,
           notes,
           warning,
           date_updated: plant.date_updated,
