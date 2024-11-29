@@ -1,10 +1,11 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const { upload, uploadFile, deleteFile, getFileKey } = require('./utils/s3');
 const { SPACES_CONFIG } = require('./config/spaces');
 
-// Add this check
+// Now we can log
 console.log('SPACES_CONFIG:', {
   bucket: SPACES_CONFIG.BUCKET,
   baseUrl: SPACES_CONFIG.BASE_URL
