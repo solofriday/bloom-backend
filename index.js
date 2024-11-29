@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 const { upload, uploadFile, deleteFile, getFileKey } = require('./utils/s3');
-const { SPACES_CONFIG } = require('./config/spaces');
+const SPACES_CONFIG = require('./config/spaces');
 
 // Now we can log
 console.log('SPACES_CONFIG:', {
