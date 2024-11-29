@@ -647,6 +647,48 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
   }
 });
 
+// Add this endpoint for deleting photos
+app.delete('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
+  const { userId, plantObjId, photoId } = req.params;
+
+  try {
+    console.log('Deleting photo:', {
+      userId,
+      plantObjId,
+      photoId
+    });
+
+    const [results] = await pool.execute(
+      'CALL DeletePhoto(?, ?, ?)',
+      [parseInt(userId), parseInt(plantObjId), parseInt(photoId)]
+    );
+
+    // The SP returns the deleted photo ID in the first row
+    const deletedPhotoId = results[0][0]?.deleted_photo_id;
+
+    if (!deletedPhotoId) {
+      return res.status(404).json({
+        success: false,
+        message: 'Photo not found or not authorized to delete'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Photo deleted successfully',
+      photoId: deletedPhotoId
+    });
+
+  } catch (error) {
+    console.error('Error deleting photo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete photo',
+      error: error.message
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
 
