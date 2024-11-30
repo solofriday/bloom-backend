@@ -531,17 +531,27 @@ app.post('/api/photos/add', upload.single('image'), async (req, res) => {
       [parseInt(userId), parseInt(plantObjId), filename, photoDate, parsedStageId]
     );
 
+    // Extract the photo data from the SP result
+    const photoData = result[0][0];
+    console.log('SP Result:', photoData);
+
+    // Parse the stage JSON if it exists
+    const stage = photoData.stage ? 
+      (typeof photoData.stage === 'string' ? JSON.parse(photoData.stage) : photoData.stage) 
+      : null;
+
     const response = {
       success: true,
       photo: {
-        photo_id: result[0][0].photo_id,
+        photo_id: photoData.photo_id,
         filename: filename,
         date_taken: photoDate.toISOString(),
         date_uploaded: new Date().toISOString(),
-        stage: parsedStageId ? { id: parsedStageId } : null
+        stage: stage
       }
     };
 
+    console.log('Sending response:', response);
     res.json(response);
 
   } catch (error) {
