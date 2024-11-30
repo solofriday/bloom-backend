@@ -656,6 +656,45 @@ app.put('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
   }
 });
 
+// Add endpoint for creating new plant objects
+app.post('/api/plants/obj/add', async (req, res) => {
+  try {
+    const {
+      userId,
+      varietyId,
+      locationId,
+      stageId,
+      datePlanted,
+      isTransplant,
+      status
+    } = req.body;
+
+    const [results] = await pool.execute(
+      'CALL AddPlantObj(?, ?, ?, ?, NOW(), ?, ?, ?)',
+      [userId, varietyId, locationId, stageId, datePlanted, isTransplant, status]
+    );
+
+    const plantObjId = results[0][0]?.plant_obj_id;
+    if (!plantObjId) {
+      throw new Error('Failed to get plant_obj_id from stored procedure');
+    }
+
+    res.json({
+      success: true,
+      message: 'Plant object added successfully',
+      plant_obj_id: plantObjId
+    });
+
+  } catch (error) {
+    console.error('Error in AddPlantObj:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding plant object',
+      error: error.message
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
 
