@@ -1,3 +1,7 @@
+// This is the backend for the Bloom app
+// It is a Node.js server using Express and MySQL
+// We call stored procedures and never use raw SQL
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -569,27 +573,28 @@ app.delete('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
   const { userId, plantObjId, photoId } = req.params;
 
   try {
-    // Call DeletePhoto SP which now returns both photo_id and filename
-    const [results] = await pool.execute(
+    // Call DeletePhoto SP which returns deleted_photo_id if successful
+    const [result] = await pool.execute(
       'CALL DeletePhoto(?, ?, ?)',
       [parseInt(userId), parseInt(plantObjId), parseInt(photoId)]
     );
 
-    const deletedPhoto = results[0]?.[0];
-    if (!deletedPhoto?.deleted_photo_id || !deletedPhoto?.filename) {
+    // Check if we got a result (photo was found and deleted)
+    const deletedPhotoId = result[0]?.[0]?.deleted_photo_id;
+    if (!deletedPhotoId) {
       return res.status(404).json({
         success: false,
-        message: 'Photo not found'
+        message: 'Photo not found or not authorized to delete'
       });
     }
 
-    // Delete from S3 using the returned filename
-    await deleteFile(userId, plantObjId, deletedPhoto.filename);
+    // If photo was deleted from database, also delete from S3
+    await deleteFile(userId, plantObjId, photoId);
 
     res.json({
       success: true,
       message: 'Photo deleted successfully',
-      photoId: deletedPhoto.deleted_photo_id
+      photoId: deletedPhotoId
     });
 
   } catch (error) {
