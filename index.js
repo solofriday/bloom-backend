@@ -573,28 +573,28 @@ app.delete('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
   const { userId, plantObjId, photoId } = req.params;
 
   try {
-    // Call DeletePhoto SP which returns deleted_photo_id if successful
+    // Call DeletePhoto SP which returns deleted_photo_id and filename if successful
     const [result] = await pool.execute(
       'CALL DeletePhoto(?, ?, ?)',
       [parseInt(userId), parseInt(plantObjId), parseInt(photoId)]
     );
 
     // Check if we got a result (photo was found and deleted)
-    const deletedPhotoId = result[0]?.[0]?.deleted_photo_id;
-    if (!deletedPhotoId) {
+    const deletedPhoto = result[0]?.[0];
+    if (!deletedPhoto?.deleted_photo_id) {
       return res.status(404).json({
         success: false,
         message: 'Photo not found or not authorized to delete'
       });
     }
 
-    // If photo was deleted from database, also delete from S3
-    await deleteFile(userId, plantObjId, photoId);
+    // If photo was deleted from database, also delete from S3 using the filename
+    await deleteFile(userId, plantObjId, deletedPhoto.filename);
 
     res.json({
       success: true,
       message: 'Photo deleted successfully',
-      photoId: deletedPhotoId
+      photoId: deletedPhoto.deleted_photo_id
     });
 
   } catch (error) {
