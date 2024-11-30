@@ -607,6 +607,55 @@ app.delete('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
   }
 });
 
+app.put('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
+  const { userId, plantObjId, photoId } = req.params;
+  const { dateTaken, stageId } = req.body;
+
+  if (!dateTaken || !stageId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Date taken and stage ID are required'
+    });
+  }
+
+  try {
+    // Call EditPhoto SP which returns updated photo details
+    const [result] = await pool.execute(
+      'CALL EditPhoto(?, ?, ?, ?, ?)',
+      [parseInt(userId), parseInt(plantObjId), parseInt(photoId), dateTaken, parseInt(stageId)]
+    );
+
+    // Check if we got a result (photo was found and updated)
+    const updatedPhoto = result[0]?.[0];
+    if (!updatedPhoto?.updated_photo_id) {
+      return res.status(404).json({
+        success: false,
+        message: 'Photo not found or not authorized to edit'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Photo updated successfully',
+      photo: {
+        photo_id: updatedPhoto.updated_photo_id,
+        date_taken: updatedPhoto.updated_date_taken,
+        stage: {
+          id: updatedPhoto.updated_stage_id
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating photo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update photo',
+      error: error.message
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
 
