@@ -696,38 +696,33 @@ app.post('/api/plants/obj/add', async (req, res) => {
 });
 
 // Add this new endpoint for getting plant projections
-app.get('/api/plants/projection/:plantObjId', async (req, res) => {
+app.get('/api/projections/:plantObjId', async (req, res) => {
   try {
-    const plantObjId = parseInt(req.params.plantObjId);
-    const mode = parseInt(req.query.mode || '1'); // Default to mode 1 if not specified
+    const { plantObjId } = req.params;
+    const mode = parseInt(req.query.mode as string) || 2; // Default to all stages if not specified
     
-    // Validate inputs
-    if (isNaN(plantObjId)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid plant object ID' 
-      });
-    }
+    console.log('Fetching projections for plant:', plantObjId, 'mode:', mode);
     
+    // Validate mode
     if (mode !== 1 && mode !== 2) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid mode. Use 1 for current stage, 2 for all stages' 
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid mode. Use 1 for current stage, 2 for all stages'
       });
     }
 
-    console.log(`Generating projections for plant ${plantObjId} in mode ${mode}`);
-    
-    // Call the stored procedure
     const [results] = await pool.execute('CALL GeneratePlantObjProjection(?, ?)', [plantObjId, mode]);
     
-    // The SP returns the projections in the first result set
+    // The SP returns projections in the first result set
     const projections = results[0].map(projection => ({
       projection_id: projection.plant_obj_projection_id,
       plant_obj_id: projection.plant_obj_id,
+      variety_id: projection.variety_id,
       stage_id: projection.stage_id,
       date_expected_start: projection.date_expected_start,
-      date_expected_end: projection.date_expected_end
+      date_expected_end: projection.date_expected_end,
+      temp_min: projection.temp_min,
+      temp_max: projection.temp_max
     }));
 
     res.json({
@@ -736,19 +731,10 @@ app.get('/api/plants/projection/:plantObjId', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error generating projections:', error);
-    
-    // Handle specific SQL error states
-    if (error.sqlState === '45000') {
-      return res.status(400).json({
-        success: false,
-        message: error.message
-      });
-    }
-    
+    console.error('Error fetching projections:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Error generating projections',
+      message: 'Error fetching projections', 
       error: error.message 
     });
   }
