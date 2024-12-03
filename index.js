@@ -123,7 +123,7 @@ app.get('/api/plants', async (req, res) => {
     });
   }
 });
-
+//the timeline for a variety - its just the stages in order
 app.get('/api/stages', async (req, res) => {
   const varietyId = req.query.varietyId;
   
@@ -139,12 +139,11 @@ app.get('/api/stages', async (req, res) => {
     
     // The first element contains our result set
     const stages = results[0].map(stage => ({
-      id: stage.stage_id,
-      name: stage.stage_name,
+      id: stage.id,
+      name: stage.name,
       description: stage.description,
-      duration_days: stage.duration_days,
-      temp_min: stage.temp_min,
-      temp_max: stage.temp_max
+      stage_order: stage.stage_order
+
     }));
 
     res.json(stages);
