@@ -124,24 +124,34 @@ app.get('/api/plants', async (req, res) => {
   }
 });
 
-// Add this new endpoint after the existing endpoints
 app.get('/api/stages', async (req, res) => {
+  const varietyId = req.query.varietyId;
+  
+  if (!varietyId) {
+    return res.status(400).json({
+      message: 'varietyId is required'
+    });
+  }
+
   try {
-    console.log('Fetching all stages...');
-    const [results] = await pool.execute('CALL GetAllStages()');
+    console.log('Fetching variety timeline for varietyId:', varietyId);
+    const [results] = await pool.execute('CALL GetVarietyTimeline(?)', [varietyId]);
     
     // The first element contains our result set
     const stages = results[0].map(stage => ({
-      id: stage.id,
-      name: stage.name,
-      description: stage.description
+      id: stage.stage_id,
+      name: stage.stage_name,
+      description: stage.description,
+      duration_days: stage.duration_days,
+      temp_min: stage.temp_min,
+      temp_max: stage.temp_max
     }));
 
     res.json(stages);
   } catch (error) {
     console.error('Database error:', error);
     res.status(500).json({ 
-      message: 'Error fetching stages', 
+      message: 'Error fetching variety timeline', 
       error: error.message 
     });
   }
