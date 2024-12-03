@@ -699,7 +699,7 @@ app.post('/api/plants/obj/add', async (req, res) => {
 app.get('/api/projections/:plantObjId', async (req, res) => {
   try {
     const { plantObjId } = req.params;
-    const mode = parseInt(req.query.mode as string) || 2; // Default to all stages if not specified
+    const mode = parseInt(req.query.mode) || 2; // Default to all stages if not specified
     
     console.log('Fetching projections for plant:', plantObjId, 'mode:', mode);
     
