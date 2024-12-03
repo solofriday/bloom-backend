@@ -695,6 +695,65 @@ app.post('/api/plants/obj/add', async (req, res) => {
   }
 });
 
+// Add this new endpoint for getting plant projections
+app.get('/api/plants/projection/:plantObjId', async (req, res) => {
+  try {
+    const plantObjId = parseInt(req.params.plantObjId);
+    const mode = parseInt(req.query.mode || '1'); // Default to mode 1 if not specified
+    
+    // Validate inputs
+    if (isNaN(plantObjId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid plant object ID' 
+      });
+    }
+    
+    if (mode !== 1 && mode !== 2) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid mode. Use 1 for current stage, 2 for all stages' 
+      });
+    }
+
+    console.log(`Generating projections for plant ${plantObjId} in mode ${mode}`);
+    
+    // Call the stored procedure
+    const [results] = await pool.execute('CALL GeneratePlantObjProjection(?, ?)', [plantObjId, mode]);
+    
+    // The SP returns the projections in the first result set
+    const projections = results[0].map(projection => ({
+      projection_id: projection.plant_obj_projection_id,
+      plant_obj_id: projection.plant_obj_id,
+      stage_id: projection.stage_id,
+      date_expected_start: projection.date_expected_start,
+      date_expected_end: projection.date_expected_end
+    }));
+
+    res.json({
+      success: true,
+      projections
+    });
+
+  } catch (error) {
+    console.error('Error generating projections:', error);
+    
+    // Handle specific SQL error states
+    if (error.sqlState === '45000') {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      message: 'Error generating projections',
+      error: error.message 
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
 
