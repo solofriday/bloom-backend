@@ -696,22 +696,13 @@ app.post('/api/plants/obj/add', async (req, res) => {
 });
 
 // Add this new endpoint for getting plant projections
-app.get('/api/projections/:plantObjId', async (req, res) => {
+app.post('/api/plants/:plantObjId/projections', async (req, res) => {
   try {
-    const { plantObjId } = req.params;
-    const mode = parseInt(req.query.mode) || 2; // Default to all stages if not specified
+    const plantObjId = parseInt(req.params.plantObjId);
     
-    console.log('Fetching projections for plant:', plantObjId, 'mode:', mode);
-    
-    // Validate mode
-    if (mode !== 1 && mode !== 2) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid mode. Use 1 for current stage, 2 for all stages'
-      });
-    }
+    console.log('Generating projections for plant:', plantObjId);
 
-    const [results] = await pool.execute('CALL GeneratePlantObjProjection(?, ?)', [plantObjId, mode]);
+    const [results] = await pool.execute('CALL GeneratePlantObjProjection(?, ?)', [plantObjId, 2]); // Always use mode 2 for all stages
     
     // The SP returns projections in the first result set
     const projections = results[0].map(projection => ({
@@ -731,10 +722,10 @@ app.get('/api/projections/:plantObjId', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching projections:', error);
+    console.error('Error generating projections:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Error fetching projections', 
+      message: 'Error generating projections', 
       error: error.message 
     });
   }
