@@ -695,14 +695,50 @@ app.post('/api/plants/obj/add', async (req, res) => {
   }
 });
 
-// Add this new endpoint for getting plant projections
-app.post('/api/plants/:plantObjId/projections', async (req, res) => {
+/**
+ * Get projections for a plant's growth stages
+ * 
+ * GET /api/plants/:plantObjId/projections?mode=[1|2]
+ * 
+ * Parameters:
+ * - plantObjId: ID of the plant object
+ * - mode: 1 for current stage only, 2 for all stages (default: 2)
+ * 
+ * Example calls:
+ * GET /api/plants/1/projections?mode=1  // Get current stage projection
+ * GET /api/plants/1/projections?mode=2  // Get all stage projections
+ * 
+ * Example response:
+ * {
+ *   "success": true,
+ *   "projections": [{
+ *     "projection_id": 1,
+ *     "plant_obj_id": 1,
+ *     "variety_id": 40,
+ *     "stage_id": 1,
+ *     "date_expected_start": "2024-03-15",
+ *     "date_expected_end": "2024-04-01",
+ *     "temp_min": 20.00,
+ *     "temp_max": 60.00
+ *   }]
+ * }
+ */
+app.get('/api/plants/:plantObjId/projections', async (req, res) => {
   try {
     const plantObjId = parseInt(req.params.plantObjId);
+    const mode = parseInt(req.query.mode) || 2; // Default to all stages if not specified
     
-    console.log('Generating projections for plant:', plantObjId);
+    // Validate mode
+    if (mode !== 1 && mode !== 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid mode. Use 1 for current stage, 2 for all stages'
+      });
+    }
 
-    const [results] = await pool.execute('CALL GeneratePlantObjProjection(?, ?)', [plantObjId, 2]); // Always use mode 2 for all stages
+    console.log('Fetching projections for plant:', plantObjId, 'mode:', mode);
+
+    const [results] = await pool.execute('CALL GeneratePlantObjProjection(?, ?)', [plantObjId, mode]);
     
     // The SP returns projections in the first result set
     const projections = results[0].map(projection => ({
@@ -722,10 +758,10 @@ app.post('/api/plants/:plantObjId/projections', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error generating projections:', error);
+    console.error('Error fetching projections:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Error generating projections', 
+      message: 'Error fetching projections', 
       error: error.message 
     });
   }
