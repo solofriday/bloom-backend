@@ -42,10 +42,11 @@ const pool = mysql.createPool({
 app.get('/api/plants', async (req, res) => {
   const userId = req.query.userId || null;
   const status = req.query.status || null;
+  const currentDate = new Date().toISOString().split('T')[0]; // Get today's date in 'YYYY-MM-DD' format
 
   try {
-    console.log('Fetching plants with stages, locations, and photos for userId:', userId, 'and status:', status);
-    const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?)', [userId, status]);
+    console.log('Fetching plants with stages, locations, and photos...');
+    const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?, ?)', [userId, status, currentDate]);
     
     const plants = results[0].map(plant => {
       try {
@@ -60,6 +61,7 @@ app.get('/api/plants', async (req, res) => {
           cold_tolerance: null,
           heat_tolerance: null
         });
+        const projections = typeof plant.projections === 'string' ? JSON.parse(plant.projections) : (plant.projections || []);
 
         // Normalize photo structure - REMOVE URL CONSTRUCTION
         const normalizedPhotos = photos.map(photo => ({
@@ -84,7 +86,8 @@ app.get('/api/plants', async (req, res) => {
           date_planted: plant.date_planted,
           is_transplant: plant.is_transplant,
           status: plant.status,
-          current_temp: plant.current_temp
+          current_temp: plant.current_temp,
+          projections
         };
       } catch (parseError) {
         console.error('Error parsing plant data:', parseError, {
@@ -109,6 +112,7 @@ app.get('/api/plants', async (req, res) => {
           is_transplant: plant.is_transplant,
           status: plant.status,
           current_temp: plant.current_temp,
+          projections: []
         };
       }
     });
