@@ -727,7 +727,12 @@ app.get('/api/plants/:plantObjId/projections', async (req, res) => {
       projection_id: projection.plant_obj_projection_id,
       plant_obj_id: projection.plant_obj_id,
       variety_id: projection.variety_id,
-      stage_id: projection.stage_id,
+      stage: {
+        id: projection.stage_id,
+        name: projection.stage_name,
+        order: projection.stage_order,
+        description: projection.stage_description
+      },
       date_expected_start: projection.date_expected_start,
       date_expected_end: projection.date_expected_end,
       temp_min: projection.temp_min,
