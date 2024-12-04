@@ -44,7 +44,7 @@ app.get('/api/plants', async (req, res) => {
   const status = req.query.status || null;
 
   try {
-    console.log('Fetching plants with stages, locations, and photos...');
+    console.log('Fetching plants with stages, locations, and photos for userId:', userId, 'and status:', status);
     const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?)', [userId, status]);
     
     const plants = results[0].map(plant => {
