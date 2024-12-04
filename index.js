@@ -720,7 +720,7 @@ app.get('/api/plants/:plantObjId/projections', async (req, res) => {
 
     console.log('Fetching projections for plant:', plantObjId);
 
-    const [results] = await pool.execute('CALL GeneratePlantObjProjection(?)', [plantObjId]);
+    const [results] = await pool.execute('CALL GetPlantObjProjection(?)', [plantObjId]);
     
     // The SP returns projections in the first result set
     const projections = results[0].map(projection => ({
