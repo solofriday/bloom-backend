@@ -723,21 +723,28 @@ app.get('/api/plants/:plantObjId/projections', async (req, res) => {
     const [results] = await pool.execute('CALL GetPlantObjProjection(?)', [plantObjId]);
     
     // The SP returns projections in the first result set
-    const projections = results[0].map(projection => ({
-      projection_id: projection.plant_obj_projection_id,
-      plant_obj_id: projection.plant_obj_id,
-      variety_id: projection.variety_id,
-      stage: {
-        id: projection.stage_id,
-        name: projection.stage_name,
-        order: projection.stage_order,
-        description: projection.stage_description
-      },
-      date_expected_start: projection.date_expected_start,
-      date_expected_end: projection.date_expected_end,
-      temp_min: projection.temp_min,
-      temp_max: projection.temp_max
-    }));
+    const projections = results[0].map(projection => {
+      // Parse the stage JSON string into an object
+      const stageData = typeof projection.stage === 'string' 
+        ? JSON.parse(projection.stage) 
+        : projection.stage;
+
+      return {
+        projection_id: projection.plant_obj_projection_id,
+        plant_obj_id: projection.plant_obj_id,
+        variety_id: projection.variety_id,
+        stage: {
+          id: stageData.stage_id,
+          name: stageData.stage_name,
+          order: stageData.stage_order,
+          description: stageData.stage_description
+        },
+        date_expected_start: projection.date_expected_start,
+        date_expected_end: projection.date_expected_end,
+        temp_min: projection.temp_min,
+        temp_max: projection.temp_max
+      };
+    });
 
     res.json({
       success: true,
