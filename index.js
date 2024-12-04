@@ -143,7 +143,6 @@ app.get('/api/stages', async (req, res) => {
       name: stage.name,
       description: stage.description,
       stage_order: stage.stage_order
-
     }));
 
     res.json(stages);
@@ -707,47 +706,21 @@ app.post('/api/plants/obj/add', async (req, res) => {
 /**
  * Get projections for a plant's growth stages
  * 
- * GET /api/plants/:plantObjId/projections?mode=[1|2]
+ * GET /api/plants/:plantObjId/projections
  * 
  * Parameters:
- * - plantObjId: ID of the plant object
- * - mode: 1 for current stage only, 2 for all stages (default: 2)
+ * - plantObjId: ID of the plant object (from URL path)
  * 
  * Example calls:
- * GET /api/plants/1/projections?mode=1  // Get current stage projection
- * GET /api/plants/1/projections?mode=2  // Get all stage projections
- * 
- * Example response:
- * {
- *   "success": true,
- *   "projections": [{
- *     "projection_id": 1,
- *     "plant_obj_id": 1,
- *     "variety_id": 40,
- *     "stage_id": 1,
- *     "date_expected_start": "2024-03-15",
- *     "date_expected_end": "2024-04-01",
- *     "temp_min": 20.00,
- *     "temp_max": 60.00
- *   }]
- * }
+ * GET /api/plants/1/projections // 
  */
 app.get('/api/plants/:plantObjId/projections', async (req, res) => {
   try {
     const plantObjId = parseInt(req.params.plantObjId);
-    const mode = parseInt(req.query.mode) || 2; // Default to all stages if not specified
-    
-    // Validate mode
-    if (mode !== 1 && mode !== 2) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid mode. Use 1 for current stage, 2 for all stages'
-      });
-    }
 
-    console.log('Fetching projections for plant:', plantObjId, 'mode:', mode);
+    console.log('Fetching projections for plant:', plantObjId);
 
-    const [results] = await pool.execute('CALL GeneratePlantObjProjection(?, ?)', [plantObjId, mode]);
+    const [results] = await pool.execute('CALL GeneratePlantObjProjection(?)', [plantObjId]);
     
     // The SP returns projections in the first result set
     const projections = results[0].map(projection => ({
