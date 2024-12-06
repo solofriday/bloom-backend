@@ -34,7 +34,8 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   queueLimit: 0,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0
+  keepAliveInitialDelay: 0,
+  dateStrings: false
 });
 
 // API endpoints...
@@ -256,6 +257,9 @@ app.post('/api/plants/update', async (req, res) => {
       newStatus
     } = req.body;
 
+    // Convert date string to MySQL date format
+    const formattedPlantedDate = new Date(newDatePlanted).toISOString().slice(0, 10);
+
     // Detailed logging of received data
     console.log('Raw request body:', req.body);
     console.log('Parsed values:', {
@@ -264,7 +268,7 @@ app.post('/api/plants/update', async (req, res) => {
       newVarietyId: typeof newVarietyId + ' -> ' + newVarietyId,
       newLocationId: typeof newLocationId + ' -> ' + newLocationId,
       newStageId: typeof newStageId + ' -> ' + newStageId,
-      newDatePlanted: typeof newDatePlanted + ' -> ' + newDatePlanted,
+      newDatePlanted: typeof formattedPlantedDate + ' -> ' + formattedPlantedDate,
       newIsTransplant: typeof newIsTransplant + ' -> ' + newIsTransplant,
       newStatus: typeof newStatus + ' -> ' + newStatus
     });
@@ -277,7 +281,7 @@ app.post('/api/plants/update', async (req, res) => {
         newVarietyId,
         newLocationId,
         newStageId,
-        newDatePlanted,
+        formattedPlantedDate,
         newIsTransplant,
         newStatus
       ]
