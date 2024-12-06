@@ -41,9 +41,9 @@ const pool = mysql.createPool({
 
 // Updated API endpoint to get plants with stages and locations
 app.get('/api/plants', async (req, res) => {
-  // Parse query parameters and convert 'null' strings to actual null values
+  // Parse query parameters and convert 'null' strings or empty strings to actual null values
   const parseQueryParam = (param) => {
-    return param === 'null' || !param ? null : param;
+    return param === 'null' || param === '' || param === undefined ? null : param;
   };
 
   const userId = parseQueryParam(req.query.userId);
@@ -251,10 +251,13 @@ app.post('/api/plants/update', async (req, res) => {
       newVarietyId,
       newLocationId,
       newStageId,
-      newDatePlanted,
+      newDatePlanted: dateString,
       newIsTransplant,
       newStatus
     } = req.body;
+
+    // Ensure proper MySQL date format
+    const newDatePlanted = new Date(dateString).toISOString().split('T')[0];
 
     // Detailed logging of received data
     console.log('Raw request body:', req.body);
