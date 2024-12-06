@@ -61,8 +61,14 @@ app.get('/api/plants', async (req, res) => {
     });
     const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?, ?, ?)', [userId, plantObjId, status, currentDate]);
     
+    // Log raw results before processing
+    console.log('Raw results from database:', JSON.stringify(results[0], null, 2));
+    
     const plants = results[0].map(plant => {
       try {
+        // Log raw date_planted value
+        console.log('Raw date_planted value:', plant.date_planted, 'type:', typeof plant.date_planted);
+        
         // Parse JSON strings only if they're not already objects
         const plant_data = typeof plant.plant === 'string' ? JSON.parse(plant.plant) : plant.plant;
         const variety = typeof plant.variety === 'string' ? JSON.parse(plant.variety) : plant.variety;
@@ -75,6 +81,9 @@ app.get('/api/plants', async (req, res) => {
           heat_tolerance: null
         });
         const projections = typeof plant.projections === 'string' ? JSON.parse(plant.projections) : (plant.projections || []);
+
+        // Format date_planted if it exists
+        const formattedDatePlanted = plant.date_planted ? new Date(plant.date_planted).toISOString().slice(0, 10) : null;
 
         // Normalize photo structure - REMOVE URL CONSTRUCTION
         const normalizedPhotos = photos.map(photo => ({
@@ -96,7 +105,7 @@ app.get('/api/plants', async (req, res) => {
           notes,
           warning,
           date_updated: plant.date_updated,
-          date_planted: plant.date_planted,
+          date_planted: formattedDatePlanted,
           is_transplant: plant.is_transplant,
           status: plant.status,
           current_temp: plant.current_temp,
@@ -121,7 +130,7 @@ app.get('/api/plants', async (req, res) => {
             heat_tolerance: null
           },
           date_updated: plant.date_updated,
-          date_planted: plant.date_planted,
+          date_planted: formattedDatePlanted,
           is_transplant: plant.is_transplant,
           status: plant.status,
           current_temp: plant.current_temp,
