@@ -35,7 +35,7 @@ const pool = mysql.createPool({
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  dateStrings: false
+  dateStrings: true
 });
 
 // API endpoints...
@@ -66,8 +66,13 @@ app.get('/api/plants', async (req, res) => {
     
     const plants = results[0].map(plant => {
       try {
-        // Log raw date_planted value
-        console.log('Raw date_planted value:', plant.date_planted, 'type:', typeof plant.date_planted);
+        // Log raw date_planted value and its type
+        console.log('Raw plant object:', {
+          date_planted: plant.date_planted,
+          type: typeof plant.date_planted,
+          isNull: plant.date_planted === null,
+          isUndefined: plant.date_planted === undefined
+        });
         
         // Parse JSON strings only if they're not already objects
         const plant_data = typeof plant.plant === 'string' ? JSON.parse(plant.plant) : plant.plant;
@@ -83,7 +88,18 @@ app.get('/api/plants', async (req, res) => {
         const projections = typeof plant.projections === 'string' ? JSON.parse(plant.projections) : (plant.projections || []);
 
         // Format date_planted if it exists
-        const formattedDatePlanted = plant.date_planted ? new Date(plant.date_planted).toISOString().slice(0, 10) : null;
+        let formattedDatePlanted = null;
+        if (plant.date_planted) {
+          console.log('Attempting to format date:', plant.date_planted);
+          try {
+            formattedDatePlanted = new Date(plant.date_planted).toISOString().slice(0, 10);
+            console.log('Successfully formatted date:', formattedDatePlanted);
+          } catch (dateError) {
+            console.error('Error formatting date:', dateError);
+            // If date formatting fails, use the raw value
+            formattedDatePlanted = plant.date_planted;
+          }
+        }
 
         // Normalize photo structure - REMOVE URL CONSTRUCTION
         const normalizedPhotos = photos.map(photo => ({
@@ -94,14 +110,14 @@ app.get('/api/plants', async (req, res) => {
           stage: photo.stage
         }));
 
-        return {
+        const plantObject = {
           plant_obj_id: plant.plant_obj_id,
           user_id: plant.user_id,
           plant: plant_data,
           variety,
           stage,
           location,
-          photos: normalizedPhotos,  // Use normalized photos without URLs
+          photos: normalizedPhotos,
           notes,
           warning,
           date_updated: plant.date_updated,
@@ -111,6 +127,9 @@ app.get('/api/plants', async (req, res) => {
           current_temp: plant.current_temp,
           projections
         };
+
+        console.log('Final plant object date_planted:', plantObject.date_planted);
+        return plantObject;
       } catch (parseError) {
         console.error('Error parsing plant data:', parseError, {
           plantId: plant.plant_obj_id,
