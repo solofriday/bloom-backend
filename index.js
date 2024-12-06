@@ -41,12 +41,13 @@ const pool = mysql.createPool({
 // Updated API endpoint to get plants with stages and locations
 app.get('/api/plants', async (req, res) => {
   const userId = req.query.userId || null;
+  const plantObjId = req.query.plantObjId || null;
   const status = req.query.status || null;
   const currentDate = new Date().toISOString().split('T')[0]; // Get today's date in 'YYYY-MM-DD' format
 
   try {
     console.log('Fetching plants with stages, locations, and photos...');
-    const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?, ?)', [userId, status, currentDate]);
+    const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?, ?, ?)', [userId, plantObjId, status, currentDate]);
     
     const plants = results[0].map(plant => {
       try {
