@@ -46,7 +46,12 @@ app.get('/api/plants', async (req, res) => {
   const currentDate = new Date().toISOString().split('T')[0]; // Get today's date in 'YYYY-MM-DD' format
 
   try {
-    console.log('Fetching plants with stages, locations, and photos...');
+    console.log('Fetching GetPlantsWithStagesAndLocations', {
+      userId: userId,
+      plantObjId: plantObjId,
+      status: status,
+      currentDate: currentDate
+    });
     const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?, ?, ?)', [userId, plantObjId, status, currentDate]);
     
     const plants = results[0].map(plant => {
