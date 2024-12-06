@@ -251,13 +251,10 @@ app.post('/api/plants/update', async (req, res) => {
       newVarietyId,
       newLocationId,
       newStageId,
-      newDatePlanted: dateString,
+      newDatePlanted,
       newIsTransplant,
       newStatus
     } = req.body;
-
-    // Ensure proper MySQL date format
-    const newDatePlanted = new Date(dateString).toISOString().split('T')[0];
 
     // Detailed logging of received data
     console.log('Raw request body:', req.body);
