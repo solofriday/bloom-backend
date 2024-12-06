@@ -41,10 +41,15 @@ const pool = mysql.createPool({
 
 // Updated API endpoint to get plants with stages and locations
 app.get('/api/plants', async (req, res) => {
-  const userId = req.query.userId || null;
-  const plantObjId = req.query.plantObjId || null;
-  const status = req.query.status || null;
-  const currentDate = new Date().toISOString().split('T')[0]; // Get today's date in 'YYYY-MM-DD' format
+  // Parse query parameters and convert 'null' strings to actual null values
+  const parseQueryParam = (param) => {
+    return param === 'null' || !param ? null : param;
+  };
+
+  const userId = parseQueryParam(req.query.userId);
+  const plantObjId = parseQueryParam(req.query.plantObjId);
+  const status = parseQueryParam(req.query.status);
+  const currentDate = parseQueryParam(req.query.currentDate) || new Date().toISOString().split('T')[0]; // Use today's date if not provided
 
   try {
     console.log('Fetching GetPlantsWithStagesAndLocations', {
