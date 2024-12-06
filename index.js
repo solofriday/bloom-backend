@@ -1,6 +1,7 @@
 // This is the backend for the Bloom app
 // It is a Node.js server using Express and MySQL
 // We call stored procedures and never use raw SQL
+//comment
 
 require('dotenv').config();
 const express = require('express');
