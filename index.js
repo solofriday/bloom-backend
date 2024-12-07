@@ -678,7 +678,7 @@ app.put('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
   }
 
   try {
-    // Call EditPhoto SP which returns updated photo details
+    // Call EditPhoto SP which returns updated photo details including stage name
     const [result] = await pool.execute(
       'CALL EditPhoto(?, ?, ?, ?, ?)',
       [parseInt(userId), parseInt(plantObjId), parseInt(photoId), dateTaken, parseInt(stageId)]
@@ -700,7 +700,8 @@ app.put('/api/photos/:userId/:plantObjId/:photoId', async (req, res) => {
         photo_id: updatedPhoto.updated_photo_id,
         date_taken: updatedPhoto.updated_date_taken,
         stage: {
-          id: updatedPhoto.updated_stage_id
+          id: updatedPhoto.updated_stage_id,
+          name: updatedPhoto.updated_stage_name  // Added stage name to response
         }
       }
     });
