@@ -107,7 +107,10 @@ app.get('/api/plants', async (req, res) => {
           filename: photo.filename,  // Just return filename
           date_taken: photo.date_taken,
           date_uploaded: photo.date_uploaded,
-          stage: photo.stage
+          stage: {
+            id: photo.stage_id,
+            name: photo.stage_name
+          }
         }));
 
         const plantObject = {
