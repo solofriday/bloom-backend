@@ -338,7 +338,7 @@ app.post('/api/plants/update', async (req, res) => {
 });
 
 // Update endpoint for getting notes for a specific plant
-app.get('/api/notes/:userId/:plantObjId', async (req, res) => {
+app.get('/api/notes/:plantObjId', async (req, res) => {
   try {
     const { userId, plantObjId } = req.params;
     console.log('Fetching notes for plant:', plantObjId, 'user:', userId);
@@ -764,7 +764,7 @@ app.get('/api/plants/:plantObjId/projections', async (req, res) => {
 
     console.log('Fetching projections for plant:', plantObjId);
 
-    const [results] = await pool.execute('CALL GetPlantObjProjection(?)', [plantObjId]);
+    const [results] = await pool.execute('CALL sp_get_plant_projections(?)', [plantObjId]);
     
     // The SP returns projections in the first result set
     const projections = results[0].map(projection => {
