@@ -343,7 +343,7 @@ app.get('/api/notes/:userId/:plantObjId', async (req, res) => {
     const { userId, plantObjId } = req.params;
     console.log('Fetching notes for plant:', plantObjId, 'user:', userId);
     
-    const [results] = await pool.execute('CALL GetAllNotes(?, ?)', [userId, plantObjId]);
+    const [results] = await pool.execute('CALL sp_get_plant_notes(?, ?)', [userId, plantObjId]);
     
     // Transform the results to use note_id instead of id
     const notes = results[0].map(note => ({
@@ -540,7 +540,7 @@ app.get('/api/photos/:userId/:plantObjId', async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      'CALL GetPhotos(?, ?)',
+      'CALL sp_get_plant_photos(?, ?)',
       [parseInt(userId), parseInt(plantObjId)]
     );
 
