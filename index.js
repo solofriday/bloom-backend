@@ -53,13 +53,13 @@ app.get('/api/plants', async (req, res) => {
   const currentDate = parseQueryParam(req.query.currentDate) || new Date().toISOString().split('T')[0]; // Use today's date if not provided
 
   try {
-    console.log('Fetching GetPlantsWithStagesAndLocations', {
+    console.log('Fetching sp_get_plant_details', {
       userId: userId,
       plantObjId: plantObjId,
       status: status,
       currentDate: currentDate
     });
-    const [results] = await pool.execute('CALL GetPlantsWithStagesAndLocations(?, ?, ?, ?)', [userId, plantObjId, status, currentDate]);
+    const [results] = await pool.execute('CALL sp_get_plant_details(?, ?, ?, ?)', [userId, plantObjId, status, currentDate]);
     
     // Log raw results before processing
     console.log('Raw results from database:', JSON.stringify(results[0], null, 2));
@@ -81,11 +81,8 @@ app.get('/api/plants', async (req, res) => {
         const location = typeof plant.location === 'string' ? JSON.parse(plant.location) : plant.location;
         const photos = typeof plant.photos === 'string' ? JSON.parse(plant.photos) : (plant.photos || []);
         const notes = typeof plant.notes === 'string' ? JSON.parse(plant.notes) : (plant.notes || []);
-        const warning = typeof plant.warning === 'string' ? JSON.parse(plant.warning) : (plant.warning || {
-          cold_tolerance: null,
-          heat_tolerance: null
-        });
         const projections = typeof plant.projections === 'string' ? JSON.parse(plant.projections) : (plant.projections || []);
+        const forecast_alerts = typeof plant.forecast_alerts === 'string' ? JSON.parse(plant.forecast_alerts) : (plant.forecast_alerts || []);
 
         // Format date_planted if it exists
         let formattedDatePlanted = null;
@@ -122,13 +119,12 @@ app.get('/api/plants', async (req, res) => {
           location,
           photos: normalizedPhotos,
           notes,
-          warning,
           date_updated: plant.date_updated,
           date_planted: formattedDatePlanted,
           is_transplant: plant.is_transplant,
           status: plant.status,
-          current_temp: plant.current_temp,
-          projections
+          projections,
+          forecast_alerts
         };
 
         console.log('Final plant object date_planted:', plantObject.date_planted);
@@ -147,16 +143,12 @@ app.get('/api/plants', async (req, res) => {
           location: {},
           photos: [],
           notes: [],
-          warning: {
-            cold_tolerance: null,
-            heat_tolerance: null
-          },
           date_updated: plant.date_updated,
           date_planted: formattedDatePlanted,
           is_transplant: plant.is_transplant,
           status: plant.status,
-          current_temp: plant.current_temp,
-          projections: []
+          projections: [],
+          forecast_alerts: []
         };
       }
     });
